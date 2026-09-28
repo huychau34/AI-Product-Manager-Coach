@@ -1,0 +1,4 @@
+# Netlify configuration for AI PM Coach
+[build]
+  publish = "public"              # the website (index.html)
+  functions = "netlify/functions" # the AI Mentor backend (ai.mjs)
