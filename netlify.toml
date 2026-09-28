@@ -1,7 +1,7 @@
 # Netlify configuration for AI PM Coach
 [build]
-  publish = "public"              # the website (index.html)
-  functions = "netlify/functions" # the AI Mentor backend (ai.mjs)
+  publish = "public"              # the website
+  functions = "netlify/functions" # the AI backend (ai.mjs)
 
 # Hidden admin page: /admin and /administrator show the app, which then opens its admin view.
 [[redirects]]
@@ -13,3 +13,14 @@
   from = "/administrator"
   to = "/index.html"
   status = 200
+
+# Security headers for every page.
+# If you add another outside service (script, image host, embed), allow it in the policy below.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://eu-assets.i.posthog.com; connect-src 'self' https://eu.i.posthog.com https://eu-assets.i.posthog.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; frame-src https://www.youtube-nocookie.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"

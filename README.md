@@ -1,67 +1,89 @@
 # AI PM Coach
 
-A personalised AI product management learning app: assessment, roadmap, lessons with video, reading, practice, reflection, an AI Mentor chat and feedback.
+A personalised AI product management learning app: assessment, roadmap, 15 lessons (video, reading, practice, reflection with AI feedback, AI Mentor), a daily challenge, smart review, role-play and interview simulators, a capstone AI PRD, achievements and a LinkedIn-ready certificate.
 
 ## What's in this folder
 
 | Path | What it is |
 |---|---|
-| `public/index.html` | The whole app (one page) |
-| `netlify/functions/ai.mjs` | The AI backend for the Mentor chat, "New questions" and reflection feedback. Holds your Anthropic API key on the server. |
-| `netlify.toml` | Tells Netlify where the page and the function are |
+| `public/index.html` | The page shell (menus, footer, feedback form) |
+| `public/js/app.js` | All app logic |
+| `public/js/content.js` | Lessons, questions, readings, videos, simulator scenarios, interview questions and capstone sections |
+| `public/js/config.js` | Your settings: site address, analytics key, About-page details |
+| `public/css/app.css` | Styles |
+| `public/learn/` | Search-friendly topic pages, one per lesson |
+| `public/sitemap.xml`, `public/robots.txt`, `public/og.png`, `public/favicon.svg` | Search engines, link previews and icon |
+| `netlify/functions/ai.mjs` | The AI backend for every AI feature. Holds your Anthropic API key on the server. |
+| `netlify/lib/content.mjs` | The server's list of allowed values (lesson titles, scenarios, interview questions) |
+| `netlify.toml` | Netlify settings: folders, the hidden admin address and security headers |
+| `package.json` | Tells Netlify to install `@netlify/blobs`, used for daily AI limits |
 
-## One-time setup (about 15 minutes)
+## Updating the site from this version
 
-### 1. Get an Anthropic API key
-1. Sign in at https://console.anthropic.com and add billing.
-2. Create an API key and copy it. You'll only see it once.
-3. Recommended: set a monthly spend limit in the Console so costs can never surprise you.
+This version replaces the single `index.html` with several files and folders. In GitHub:
 
-The app uses Claude Haiku 4.5 by default. One mentor reply typically costs well under one US cent.
+1. Delete any stray copies at the top level of the repo, such as `index (1).html` or `ai.mjs` (open the file, then **⋯ → Delete file**). Files inside `public` and `netlify` will simply be replaced by the upload.
+2. Open **Add file → Upload files** on the repo's main page and drag in **everything inside this folder** (`public`, `netlify`, `netlify.toml`, `package.json`, `README.md`) using Chrome, Edge or Firefox so the folders keep their structure. Existing files with the same name are replaced.
+3. Commit. Netlify deploys automatically. The first deploy takes a little longer because it installs the package.
+4. Check the repo shows `public/js/app.js`, `public/learn/rag.html`, `netlify/lib/content.mjs` and `netlify/functions/ai.mjs`.
 
-### 2. Put the project on GitHub
-1. Create a free account at https://github.com if you don't have one.
-2. Click **New repository**, name it e.g. `ai-pm-coach`, choose **Private**, and create it.
-3. On the empty repo page, click **uploading an existing file**.
-4. Drag in the **contents** of this folder (`public`, `netlify`, `netlify.toml`, `README.md`) and click **Commit changes**.
-   Check that `netlify/functions/ai.mjs` and `public/index.html` show up in the repo.
+Your existing learners keep their progress: the new version upgrades their saved data and adds the new lessons to their roadmap.
 
-### 3. Connect the repo to Netlify
-1. In Netlify, choose **Add new project → Import an existing project → GitHub**, and pick the repo.
-2. Leave the build command empty. Netlify reads the rest from `netlify.toml`. Click **Deploy**.
-3. Go to **Site configuration → Environment variables → Add a variable**:
-   - Key: `ANTHROPIC_API_KEY`
-   - Value: your key from step 1
-4. Go to **Deploys → Trigger deploy → Deploy site**. Environment variables only apply to new deploys.
+## One-time setup (if you're starting fresh)
 
-### 4. Turn on feedback collection
-In Netlify, open **Forms** and enable **form detection**, then trigger one more deploy. Submissions appear under **Forms → feedback**. You can add email alerts under Forms notifications.
+1. **Anthropic API key:** create one at https://console.anthropic.com, add billing, and **set a monthly spend limit**.
+2. **Netlify:** import the GitHub repo (no build command needed). Under **Project configuration → Environment variables**, add `ANTHROPIC_API_KEY` with **Contains secret values** ticked; paste the key into the **Production** value. Then **Deploys → Trigger deploy**.
+3. **Feedback form:** in Netlify **Forms**, enable form detection, then trigger a deploy. Submissions appear under **Forms → feedback**.
 
-## Updating the app later
-Upload the changed file to the same place in the GitHub repo (for example `public/index.html`) and commit. Netlify deploys automatically within a minute.
+## Turning on analytics (PostHog)
 
-If you previously used Netlify Drop, that old site can be deleted. This GitHub-connected site replaces it.
+1. Create a free PostHog account and choose **EU Cloud**.
+2. Copy your **project API key** (starts with `phc_`).
+3. In `public/js/config.js`, paste it into `posthogKey: ""` and commit.
 
-## Admin page
-The admin page is hidden from the app's menus. Open it at `https://<your-site>/admin` (or `/administrator`). It shows usage counts for the browser you open it in only. It's hidden, not password-protected, and holds no personal data.
+Visitors see a consent banner and nothing is tracked until they click **Allow**. Events include assessment started/completed, lessons opened/completed, practice answers, mentor messages, reflections, reviews, daily challenges, simulator scores, PRD reviews, achievements and certificate actions, which is enough to build activation, funnel and retention charts in PostHog. If you use another analytics tool, its domain must also be added to the Content-Security-Policy in `netlify.toml`.
 
-## Optional settings
-| Environment variable | Default | Purpose |
+## Settings
+
+| Environment variable (Netlify) | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Use a different Claude model, e.g. a Sonnet model for richer answers at a higher cost |
+| `ANTHROPIC_API_KEY` | - | Required. Your Anthropic key |
+| `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Use a different Claude model |
+| `DAILY_LIMIT_PER_VISITOR` | `150` | AI requests per visitor per day |
+| `DAILY_LIMIT_TOTAL` | `3000` | AI requests for the whole site per day |
+| `ALLOWED_ORIGINS` | - | Extra site addresses allowed to call the AI (e.g. a custom domain before DNS is final) |
+
+`public/js/config.js` holds the site address (used by the certificate and LinkedIn buttons), the PostHog key and the About-page details. If you move to a custom domain, update `siteUrl` there and the addresses in `public/index.html`, `public/sitemap.xml` and `public/robots.txt`.
 
 ## Safety built in
-- The API key never reaches the browser.
-- The server writes the prompts itself, so the endpoint can't be used as a free general-purpose chatbot.
-- Each visitor is limited to 20 AI requests per minute. Extra requests get a friendly "please wait" message.
-- Message length and chat history are capped.
 
-## Troubleshooting (shown in the chat)
+- The API key never reaches the browser.
+- AI requests must come from your own site (Origin check); others get "forbidden".
+- The browser only sends known answer numbers and IDs; the server builds every prompt, so the endpoint can't be used as a free general-purpose chatbot, and the mentor stays on topic.
+- Limits: 20 AI requests per minute per visitor, plus daily caps per visitor and for the whole site (stored in Netlify Blobs; if Blobs is unavailable, only the per-minute limit applies).
+- Security headers: Content-Security-Policy (only your site, YouTube's privacy-enhanced player and PostHog EU are allowed), no framing, no sniffing, strict referrer policy.
+- All AI output and user text is escaped before it's shown.
+- A privacy notice (footer → Privacy) explains what is stored where. Have it reviewed if you're unsure it fits your situation.
+
+## Editing content
+
+- Lesson text, questions, readings and videos: `public/js/content.js`.
+- If you **add or rename a lesson, scenario, interview question or PRD section**, add the same ID and title to `netlify/lib/content.mjs` too, so the server accepts it.
+- Topic pages in `public/learn/` are static copies of the lesson text; update them when you change a lesson significantly.
+
+## Admin page
+
+Hidden from the menus. Open `https://<your-site>/admin` (or `/administrator`). It shows counts for the browser you open it in only; use PostHog for real cross-user numbers.
+
+## Troubleshooting (messages shown in the app)
+
 | Message | Fix |
 |---|---|
-| "isn't configured yet (no Anthropic API key)" | Add `ANTHROPIC_API_KEY` (step 3) and redeploy |
-| "isn't set up on this site yet" | The function wasn't deployed. Make sure `netlify/functions/ai.mjs` and `netlify.toml` are in the repo |
-| "a lot of messages in a short time" | The rate limit was hit, or your Anthropic account limit. Wait a minute |
-| "works on the published website" | The file was opened directly. Use your Netlify URL |
+| "no Anthropic API key" | Add `ANTHROPIC_API_KEY` and redeploy |
+| "API key rejected" | Update the key in Netlify, redeploy |
+| "out of credit" | Add credit in the Anthropic Console |
+| "isn't set up on this site yet" | `netlify/functions/ai.mjs` or `netlify.toml` is missing from the repo |
+| "blocked because it didn't come from this site" | You're using a new domain: add it to `ALLOWED_ORIGINS` or update the site address |
+| "today's limit" | The daily cap was reached; raise `DAILY_LIMIT_PER_VISITOR` / `DAILY_LIMIT_TOTAL` if needed |
 
-Function logs, including any Anthropic API errors, are under **Logs → Functions → ai** in Netlify.
+Function logs, including Anthropic API errors, are under **Logs → Functions → ai** in Netlify.

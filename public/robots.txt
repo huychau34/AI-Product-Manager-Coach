@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /administrator
+Disallow: /api/
+
+Sitemap: https://aipmcoach.netlify.app/sitemap.xml

@@ -1,0 +1,9 @@
+{
+  "name": "ai-pm-coach",
+  "private": true,
+  "description": "AI PM Coach - Netlify site and AI function",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^11.1.1"
+  }
+}
