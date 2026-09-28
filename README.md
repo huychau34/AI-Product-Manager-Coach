@@ -7,7 +7,7 @@ A personalised AI product management learning app: assessment, roadmap, lessons 
 | Path | What it is |
 |---|---|
 | `public/index.html` | The whole app (one page) |
-| `netlify/functions/ai.mjs` | The AI backend for the Mentor chat and "New questions". Holds your Anthropic API key on the server. |
+| `netlify/functions/ai.mjs` | The AI backend for the Mentor chat, "New questions" and reflection feedback. Holds your Anthropic API key on the server. |
 | `netlify.toml` | Tells Netlify where the page and the function are |
 
 ## One-time setup (about 15 minutes)
@@ -41,6 +41,9 @@ In Netlify, open **Forms** and enable **form detection**, then trigger one more 
 Upload the changed file to the same place in the GitHub repo (for example `public/index.html`) and commit. Netlify deploys automatically within a minute.
 
 If you previously used Netlify Drop, that old site can be deleted. This GitHub-connected site replaces it.
+
+## Admin page
+The admin page is hidden from the app's menus. Open it at `https://<your-site>/admin` (or `/administrator`). It shows usage counts for the browser you open it in only. It's hidden, not password-protected, and holds no personal data.
 
 ## Optional settings
 | Environment variable | Default | Purpose |

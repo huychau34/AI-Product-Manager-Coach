@@ -2,3 +2,14 @@
 [build]
   publish = "public"              # the website (index.html)
   functions = "netlify/functions" # the AI Mentor backend (ai.mjs)
+
+# Hidden admin page: /admin and /administrator show the app, which then opens its admin view.
+[[redirects]]
+  from = "/admin"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/administrator"
+  to = "/index.html"
+  status = 200
