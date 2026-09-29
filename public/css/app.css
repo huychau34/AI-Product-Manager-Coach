@@ -1,5 +1,5 @@
 
-:root{color-scheme:light;--bg:#f4f9ff;--card:#fff;--tx:#0f1b2d;--mu:#5b6b82;--ac:#0d9488;--ac2:#0ea5e9;--bd:#e1ecf7;--ok:#16a34a;--ring:rgba(14,165,233,.22);--pop:#f97316;--soft:#e3eefa;--hov:#f8fcff;--tagbg:#e8f6ff;--tagtx:#0369a1;--s1b:#e2e8f0;--s1t:#475569;--s2b:#fef3c7;--s2t:#92400e;--s3b:#dcfce7;--s3t:#166534;
+:root{--c1:#0d9488;--c2:#d97706;color-scheme:light;--bg:#f4f9ff;--card:#fff;--tx:#0f1b2d;--mu:#5b6b82;--ac:#0d9488;--ac2:#0ea5e9;--bd:#e1ecf7;--ok:#16a34a;--ring:rgba(14,165,233,.22);--pop:#f97316;--soft:#e3eefa;--hov:#f8fcff;--tagbg:#e8f6ff;--tagtx:#0369a1;--s1b:#e2e8f0;--s1t:#475569;--s2b:#fef3c7;--s2t:#92400e;--s3b:#dcfce7;--s3t:#166534;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
 *{box-sizing:border-box}
 :root[data-theme=dark]{color-scheme:dark;--bg:#0b1220;--card:#131c2e;--tx:#e8eef8;--mu:#94a3b8;--bd:#243049;--ac:#2dd4bf;--ac2:#38bdf8;--ring:rgba(56,189,248,.28);--soft:#1e2a40;--hov:#182338;--tagbg:rgba(56,189,248,.16);--tagtx:#7dd3fc;--s1b:#1e2a40;--s1t:#94a3b8;--s2b:rgba(245,158,11,.18);--s2t:#fbbf24;--s3b:rgba(34,197,94,.18);--s3t:#4ade80}
@@ -246,3 +246,13 @@ background:linear-gradient(var(--card),var(--card)) padding-box,linear-gradient(
  body{background:#fff!important}
  .w{padding:0}.cert{border-width:3px;box-shadow:none}
 }
+
+/* Accounts & admin dashboard */
+.chart{width:100%;height:auto;display:block;margin-top:6px}.chart .ax{font-size:11px;fill:var(--mu)}
+.chart .hit:hover rect{fill:var(--soft)}
+.tbl{width:100%;border-collapse:collapse;font-size:.88rem;margin-top:10px}.tbl th,.tbl td{text-align:left;padding:8px 6px;border-top:1px solid var(--bd);vertical-align:top}.tbl th{font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--mu);border-top:0}
+.tscroll{overflow-x:auto}
+details summary{cursor:pointer}
+@media(max-width:640px){.acct-l{display:none}}
+.nav-r{display:flex;gap:6px;flex:none}
+@media(max-width:640px){.grid3.kpis{grid-template-columns:1fr 1fr;gap:10px}.grid3.kpis .card{padding:14px}.grid3.kpis .big{font-size:1.6rem}}

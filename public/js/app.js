@@ -12,19 +12,21 @@ const app = document.getElementById("app"), navEl = document.getElementById("nav
 // ---------------- Storage ----------------
 let S = load();
 function load() { try { return JSON.parse(localStorage.getItem("aipm") || "{}") || {} } catch (e) { return {} } }
-function save() { try { localStorage.setItem("aipm", JSON.stringify(S)) } catch (e) { } }
+function saveLocal() { try { localStorage.setItem("aipm", JSON.stringify(S)) } catch (e) { } }
+function save() { S.updatedAt = Date.now(); S.dirty = (S.dirty || 0) + 1; saveLocal(); if (typeof schedulePush == "function") schedulePush() }
 function initState() {
   for (const k of ["done", "chat", "pr", "ref", "rfb", "vs", "open", "days", "rev", "daily", "conf", "ach", "rp", "iv", "steps"]) if (!S[k] || typeof S[k] != "object") S[k] = {};
   if (!S.prd || typeof S.prd != "object") S.prd = { title: "", sec: {}, fb: {} };
   if (!Array.isArray(S.ev)) S.ev = [];
   delete S.T;
+  let changed = false;
   if (S.profile && S.ver !== 2) {            // upgrade from the first version: add the new lessons, keep progress
     S.road = buildRoad(S.profile);
-    S.newLessons = 1;
+    S.newLessons = 1; changed = true;
   }
   S.ver = 2;
   if (S.view == "lesson" && !L(S.cur)) S.view = "home";
-  save();
+  changed ? save() : saveLocal();            // opening the app isn't an edit, so it doesn't trigger a cloud save
 }
 
 // ---------------- Helpers ----------------
@@ -53,7 +55,7 @@ function download(name, text, type = "text/markdown") { const a = document.creat
 // ---------------- Analytics & activity ----------------
 let PH = null; // PostHog, loaded only after consent
 function ev(name, props) {
-  S.ev.push([name, Date.now()]); if (S.ev.length > 3000) S.ev = S.ev.slice(-3000); save();
+  S.ev.push([name, Date.now()]); if (S.ev.length > 3000) S.ev = S.ev.slice(-3000); saveLocal();
   try { if (PH) PH.capture(name, props || {}) } catch (e) { }
 }
 const evCount = (n) => S.ev.filter((x) => x[0] == n).length;
@@ -143,7 +145,7 @@ ${r.extra ? `<h4>${extraTitle}</h4><div class=outline>${esc(r.extra)}</div>` : "
 const A = {};                                // click actions, called via data-c="name:args"
 const IN = {};                               // input handlers, called via data-in="name:arg"
 let V = {};                                  // views
-function go(v, cur) { if (v != "admin") leaveAdminURL(); S.view = v; if (cur !== undefined) S.cur = cur; save(); render(); window.scrollTo(0, 0) }
+function go(v, cur) { if (v != "admin") leaveAdminURL(); S.view = v; if (cur !== undefined) S.cur = cur; saveLocal(); render(); window.scrollTo(0, 0) }
 A.go = go;
 function render() {
   const view = V[S.view] ? S.view : (S.profile ? "home" : "land");
@@ -154,10 +156,10 @@ function render() {
 function renderNav() {
   const tabs = S.profile ? [["home", "Home", "🏠"], ["road", "Roadmap", "🗺️"], ["practice", "Practice", "🎭"], ["prd", "Capstone", "📝"], ["progress", "Progress", "📈"]] : [];
   document.body.classList.toggle("has-tabs", !!S.profile);
-  const due = dueCards().length, act = { lesson: "road", rp: "practice", iv: "practice", review: "home", cert: "progress", quiz: "", prof: "" }[S.view] ?? S.view;
+  const due = dueCards().length, act = { lesson: "road", rp: "practice", iv: "practice", review: "home", cert: "progress", quiz: "", prof: "", account: "" }[S.view] ?? S.view;
   navEl.innerHTML = `<div class=nav-in><button class=brand data-c="go:${S.profile ? "home" : "land"}" aria-label="AI PM Coach home"><img src="/favicon.svg" alt=""><span>AI PM Coach</span></button>
 <nav class=nav-links aria-label="Main">${tabs.map(([v, t, ic]) => `<button data-c="go:${v}" class="${act == v ? "on" : ""}" ${act == v ? 'aria-current="page"' : ""}><span class=ti aria-hidden=true>${ic}</span>${t}${v == "home" && due ? `<span class=ct aria-label="${due} review cards due">${due}</span>` : ""}</button>`).join("")}</nav>
-<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${(S.theme || "light") == "dark" ? "☀️" : "🌙"}</button></div>`
+<span class=nav-r>${AU ? `<button class=theme-btn data-c="go:account" aria-label="Your account" title="${esc(AU.email || "")}">👤 <span class=acct-l>${esc((AU.name || AU.email || "Account").split(/[ @]/)[0])}</span></button>` : ACC.on ? `<button class="theme-btn" data-c="go:account">Sign in</button>` : ""}<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${(S.theme || "light") == "dark" ? "☀️" : "🌙"}</button></span></div>`
 }
 function applyTheme() { document.documentElement.setAttribute("data-theme", S.theme || "light") }
 A.theme = () => { S.theme = (S.theme || "light") == "dark" ? "light" : "dark"; save(); applyTheme(); renderNav() };
@@ -315,6 +317,7 @@ ${l ? `<div class="card cont"><span class=eyebrow>${S.open[nx] ? "Continue where
  <div class=card><span class=eyebrow>Capstone</span><h3>Your AI PRD</h3><div class=bar><i style="width:${prdCount() / C.PRD.length * 100}%"></i></div><p class=sub>${prdCount()} of ${C.PRD.length} sections drafted</p><button class="btn sm g" data-c="go:prd">${prdCount() ? "Continue" : "Start"} the capstone</button></div>
  <div class=card><span class=eyebrow>Achievements</span><h3>${got.length} of ${ACH.length} unlocked</h3>${got.length ? `<div class=ach-row aria-hidden=true>${got.slice(-6).map((a) => `<span title="${a[2]}">${a[1]}</span>`).join("")}</div>` : '<p class=sub>Complete a lesson to earn your first badge.</p>'}<p style="margin-bottom:0"><button class="btn sm g" data-c="go:progress">See progress</button></p></div>
 </div>
+${!AU && ACC.on ? `<div class="card flat" style="border-color:var(--ac)"><span class=eyebrow>Keep your progress safe</span><h3>Sign in to save your progress to your account</h3><p class=help>Right now your progress lives only in this browser. Sign in with Google to continue on any device, and never lose it if you clear your browser.</p><button class=btn data-c=signin>Continue with Google</button></div>` : ""}
 ${S.product ? "" : productCard()}`
 };
 function homeStats() {
@@ -378,7 +381,7 @@ ${stages.map((s) => { const items = r.filter((x) => L(x.id).stage == s), sm = it
 };
 
 // ================= Lesson =================
-A.openL = (id) => { if (!S.open[id]) { S.open[id] = 1; ev("lesson_open", { id }) } go("lesson", id) };
+A.openL = (id) => { if (!S.open[id]) { S.open[id] = 1; save(); ev("lesson_open", { id }) } go("lesson", id) };
 const STEP_NAMES = [["video", "Video", "sec-video"], ["read", "Read", "sec-read"], ["practice", "Practice", "sec-practice"], ["reflect", "Reflect", "sec-reflect"], ["mentor", "Mentor", "sec-mentor"]];
 const stepsOf = (id) => (S.steps[id] = S.steps[id] || {});
 function markStep(k) { const id = S.cur, s = stepsOf(id); if (s[k]) return; s[k] = 1; save(); const b = $(`#stepsNav [data-step="${k}"]`); if (b) { b.classList.add("ok"); b.firstChild.textContent = "✓ " } if (k == "practice") finH() }
@@ -631,10 +634,10 @@ V.progress = () => {
 <div class=card><span class=eyebrow>Skill radar</span>${radar()}</div>
 <div class=card><span class=eyebrow>Confidence</span>${confRows.length ? confRows.map((r) => `<div class=cbar><span>${esc(r.l.title)}</span><span class=t title="Before ${r.c.pre}, after ${r.c.post || "-"}"><i class=pre style="width:${r.c.pre * 20}%"></i>${r.c.post ? `<i class=post style="width:${r.c.post * 20}%"></i>` : ""}</span></div>`).join("") + `<p class=legend><span><i style="background:var(--mu);opacity:.45"></i>Before the lesson</span><span><i style="background:var(--ac)"></i>After</span></p>` : '<p class=help>Rate your confidence at the start and end of each lesson to see your growth here.</p>'}</div>
 <div class=card><span class=eyebrow>Achievements · ${got} of ${ACH.length}</span><div class=ach>${ACH.map(([id, e, n, d]) => `<div class="${S.ach[id] ? "" : "lock"}"><span class=e aria-hidden=true>${e}</span><b>${n}</b><span>${d}</span></div>`).join("")}</div></div>
-<div class=card><span class=eyebrow>Your data</span><p class=help>Your progress is stored only in this browser. Download a copy, or delete everything and start over.</p><button class="btn g sm" data-c=exportData>Download my data</button> <button class="btn danger sm" data-c=resetAll>Delete all my progress</button></div>`
+<div class=card><span class=eyebrow>Your data</span><p class=help>${AU ? `Your progress is saved to your account (${esc(AU.email)}) and in this browser.` : "Your progress is stored only in this browser."} Download a copy, or delete everything and start over.</p><button class="btn g sm" data-c=exportData>Download my data</button> <button class="btn danger sm" data-c=resetAll>Delete all my progress</button></div>`
 };
 A.exportData = () => { download("ai-pm-coach-data.json", JSON.stringify(S, null, 1), "application/json") };
-A.resetAll = () => { if (!confirm("Delete all your progress, answers and chats on this device? This can't be undone.")) return; const theme = S.theme, consent = S.consent; S = { theme, consent }; initState(); save(); ev("reset"); go("land"); toast("Everything was deleted from this device.") };
+A.resetAll = () => { if (AU) { go("account"); toast("To delete your saved progress, delete your account data here."); return } if (!confirm("Delete all your progress, answers and chats on this device? This can't be undone.")) return; const theme = S.theme, consent = S.consent; S = { theme, consent }; initState(); save(); ev("reset"); go("land"); toast("Everything was deleted from this device.") };
 
 // ================= Certificate =================
 const CERT_TITLE = "AI Product Management Foundations";
@@ -662,13 +665,14 @@ V.about = () => {
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Home</button><span class=eyebrow style="display:table;margin-top:22px">About</span><h1>About AI PM Coach</h1>
 ${o.name ? `<div class=card><div class=row style="justify-content:flex-start;gap:16px;flex-wrap:nowrap"><div class=av aria-hidden=true>${esc(ini)}</div><div><p class=mu style="margin:0">Created by</p><b style="font-size:1.25rem">${esc(o.name)}</b><br><span class=mu>${esc(o.role || "")}</span></div></div>${(o.bio || []).map((p) => `<p>${esc(p)}</p>`).join("")}${o.linkedin ? `<p style="margin-bottom:0"><a class="btn g" style="display:inline-block;text-decoration:none;padding:10px 18px" href="${esc(o.linkedin)}" target=_blank rel=noopener>Connect on LinkedIn ↗</a></p>` : ""}</div>` : ""}
 <div class=card><span class=eyebrow>What this app does</span><p>AI PM Coach helps product managers build the skills to work on AI products. A 2-minute assessment of your experience, technical comfort, AI knowledge and goals produces a personal roadmap, sized to the time you have each week.</p><p>Each lesson combines a short video, a written explanation with further reading, practice questions in your industry, and reflection questions with AI feedback. Beyond lessons you'll find a daily challenge, smart review, role-play and interview simulators, a capstone AI PRD and a certificate.</p></div>
-<div class=card><span class=eyebrow>Your data</span><p style="margin:0">Your progress is saved in this browser. When you use an AI feature, what you type is sent to our server and to Anthropic to generate the reply. Details are in the <button class=lnk data-c="go:privacy">privacy notice</button>.</p></div>
+<div class=card><span class=eyebrow>Your data</span><p style="margin:0">Your progress is saved in this browser, and in your account if you sign in with Google. When you use an AI feature, what you type is sent to our server and to Anthropic to generate the reply. Details are in the <button class=lnk data-c="go:privacy">privacy notice</button>.</p></div>
 <div class=card><span class=eyebrow>Help improve it</span><p>Found a bug, want a topic covered, or have an idea? I'd love to hear it.</p><button class=btn data-c="fb">Give feedback</button></div>`
 };
 V.privacy = () => {
   document.title = "Privacy · AI PM Coach"; const o = CFG.owner || {};
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Home</button><h1 style="margin-top:14px">Privacy notice</h1><p class=mu>Plain-language summary of what happens to your data.</p>
-<div class=card><h3>Stored in your browser</h3><p>Your assessment answers, roadmap, progress, reflections, chats, simulator answers and PRD drafts are saved in this browser's local storage. We don't have a copy. Clearing your browser data deletes them, and you can also download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
+<div class=card><h3>Stored in your browser</h3><p>Your assessment answers, roadmap, progress, reflections, chats, simulator answers and PRD drafts are saved in this browser's local storage. If you don't sign in, we don't have a copy. Clearing your browser data deletes them, and you can also download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
+<div class=card><h3>If you sign in</h3><p>Signing in is optional and uses your <b>Google</b> account through <b>Supabase</b>, our account and database provider. We receive your name and email address from Google. Your progress is then also stored in our Supabase database so you can continue on any device, and we record the days you use the app and how often you sign in, to understand how many people use it. The site owner can see your name, email, sign-up date, last activity and lessons completed. You can delete your account and all its data at any time on the <button class=lnk data-c="go:account">Account</button> page.</p></div>
 <div class=card><h3>Sent when you use AI features</h3><p>When you use the AI Mentor, reflection feedback, new practice questions, the PRD review, role-play or interview scoring, the text you enter, your assessment answers (level, industry and goal), your product description if you added one, and the current lesson are sent to this site's server function (hosted by Netlify) and passed to <b>Anthropic</b>, which provides the Claude AI model, to generate the reply. Don't enter confidential or personal information in these features. The server doesn't store your messages; it keeps a daily request counter per visitor (an anonymised hash of your IP address) to prevent abuse, and hosting logs may record technical errors.</p></div>
 <div class=card><h3>Feedback form</h3><p>If you send feedback, your message, rating and, optionally, your email address are stored with <b>Netlify Forms</b> so ${esc(o.name || "the site owner")} can read and reply to them.</p></div>
 <div class=card><h3>Videos</h3><p>Lesson videos are embedded from YouTube in privacy-enhanced mode (youtube-nocookie.com). When you play a video, YouTube may store data in your browser under its own privacy policy.</p></div>
@@ -707,13 +711,159 @@ A.fbs = async () => {
   catch (e) { btn.disabled = false; btn.textContent = "Send feedback"; er.textContent = "Sorry, your feedback couldn't be sent right now. Please try again in a moment." }
 };
 
+// ================= Accounts & cloud progress (Google sign-in via Supabase) =================
+// Tokens are kept in this browser; all database access goes through /api/account on the server.
+const ACC = { on: false, checked: false };
+let AU = loadAuth();
+function loadAuth() { try { return JSON.parse(localStorage.getItem("aipm_auth") || "null") } catch (e) { return null } }
+function saveAuth() { try { AU ? localStorage.setItem("aipm_auth", JSON.stringify(AU)) : localStorage.removeItem("aipm_auth") } catch (e) { } }
+async function accPost(body, auth = true) {
+  const h = { "Content-Type": "application/json" }; if (auth && AU) h.Authorization = "Bearer " + AU.at;
+  let r; try { r = await fetch("/api/account", { method: "POST", headers: h, body: JSON.stringify(body), keepalive: body.action == "save" && JSON.stringify(body).length < 60000 }) } catch (e) { throw { code: "offline" } }
+  let d = null; try { d = await r.json() } catch (e) { }
+  if (!r.ok) throw { code: (d && d.error) || "server_error", status: r.status, data: d };
+  return d;
+}
+async function refreshToken() {
+  if (!AU || !AU.rt) return false;
+  try { const d = await accPost({ action: "refresh", refresh_token: AU.rt }, false); AU.at = d.access_token; AU.rt = d.refresh_token || AU.rt; AU.exp = Date.now() + (d.expires_in || 3600) * 1000; saveAuth(); return true } catch (e) { return false }
+}
+async function acc(body) {                   // authenticated call with automatic token refresh
+  if (!AU) throw { code: "signed_out" };
+  if (AU.exp && AU.exp - Date.now() < 60000) await refreshToken();
+  try { return await accPost(body) }
+  catch (e) {
+    if (e.code == "session_expired" && await refreshToken()) return accPost(body);
+    if (e.code == "session_expired") { AU = null; saveAuth(); renderNav(); toast("Your session ended. Please sign in again to keep saving your progress.") }
+    throw e;
+  }
+}
+A.signin = () => { ev("signin_click"); location.href = "/api/account/login" };
+// After Google sign-in, Supabase returns to the site with the session in the URL hash.
+function takeRedirect() {
+  const h = location.hash || ""; if (!/access_token=|error_description=/.test(h)) return false;
+  const q = new URLSearchParams(h.slice(1)); try { history.replaceState(null, "", location.pathname + location.search) } catch (e) { location.hash = "" }
+  if (q.get("error_description")) { setTimeout(() => toast("Sign-in didn't complete: " + q.get("error_description")), 300); return false }
+  AU = { at: q.get("access_token"), rt: q.get("refresh_token"), exp: Date.now() + (+q.get("expires_in") || 3600) * 1000 }; saveAuth(); return true;
+}
+const syncable = () => { const o = { ...S }; for (const k of ["ev", "view", "dirty", "syncedAt", "acct"]) delete o[k]; return o };
+const hasProgress = (st) => !!(st && st.profile);
+let pushT = null, pushing = false, lastPull = 0;
+function schedulePush() { if (!AU || !AU.email || S.acct != AU.email) return; clearTimeout(pushT); pushT = setTimeout(push, 2000) }
+async function push(force) {
+  if (!AU || pushing || (!S.dirty && !force)) return; pushing = true; const mark = S.dirty;
+  try {
+    const d = await acc({ action: "save", state: syncable(), base: S.syncedAt || null, force: !!force });
+    S.syncedAt = d.updated_at; if (S.dirty == mark) S.dirty = 0; S.acct = AU.email; saveLocal(); syncBadge();
+  } catch (e) {
+    if (e.code == "conflict" && e.data) { const r = e.data; mergeFrom(r.state); S.syncedAt = r.updated_at; saveLocal(); pushing = false; if (S.view != "lesson") render(); return push(true) }
+    else syncBadge(e.code);
+  } finally { pushing = false }
+}
+// When two devices changed progress before syncing, keep both: this device's values win,
+// and anything only the other device has (lessons done, answers, reviews, badges...) is added.
+function mergeFrom(remote) {
+  if (!remote) return;
+  const maps = ["done", "ach", "open", "steps", "conf", "chat", "pr", "rfb", "rp", "iv", "rev", "daily", "vs"];
+  for (const k of maps) { const r = remote[k] || {}, l = S[k] = S[k] || {}; for (const id in r) if (!(id in l)) l[id] = r[id] }
+  for (const d in remote.days || {}) S.days[d] = Math.max(S.days[d] || 0, remote.days[d]);
+  for (const id in remote.ref || {}) { const r = remote.ref[id], l = S.ref[id]; if (!l) S.ref[id] = r; else if (Array.isArray(r) && Array.isArray(l)) r.forEach((v, i) => { if (v && !(l[i] || "").trim()) l[i] = v }) }
+  if (remote.prd) { S.prd.title = S.prd.title || remote.prd.title || ""; for (const sec in remote.prd.sec || {}) if (!(S.prd.sec[sec] || "").trim()) S.prd.sec[sec] = remote.prd.sec[sec]; for (const f in remote.prd.fb || {}) if (!S.prd.fb[f]) S.prd.fb[f] = remote.prd.fb[f] }
+  if (!S.product && remote.product) S.product = remote.product;
+  if (!S.cert && remote.cert) S.cert = remote.cert;
+  S.best = Math.max(S.best || 0, remote.best || 0); S.revOk = Math.max(S.revOk || 0, remote.revOk || 0);
+  if (remote.stats && (!S.stats || remote.stats.n > S.stats.n)) S.stats = remote.stats;
+}
+function adopt(remote, ts) {
+  const keep = { ev: S.ev, theme: S.theme, consent: S.consent, view: S.view && !["land", "quiz", "prof", "syncChoice"].includes(S.view) ? S.view : "home", cur: S.cur };
+  S = { ...remote, ...keep }; S.acct = AU.email; S.syncedAt = ts; S.dirty = 0; initState(); saveLocal(); applyTheme(); render();
+}
+async function pull(first) {
+  if (!AU || !AU.email) return; lastPull = Date.now();
+  let r; try { r = await acc({ action: "load" }) } catch (e) { syncBadge(e.code); return }
+  const remote = r.state, ts = r.updated_at;
+  if (!remote || !hasProgress(remote)) { if (hasProgress(S)) { S.acct = AU.email; await push(true); if (first) toast("Your progress is now saved to your account ☁️") } else S.acct = AU.email; saveLocal(); return }
+  if (S.acct == AU.email) {                   // this device already belongs to this account
+    if (S.syncedAt == ts) { if (S.dirty) push(); return }
+    if (!S.dirty) { adopt(remote, ts); if (!first) toast("Updated with your progress from another device") } else { mergeFrom(remote); S.syncedAt = ts; saveLocal(); push(true) }
+    return;
+  }
+  if (!hasProgress(S)) { adopt(remote, ts); toast("Welcome back! Your progress is loaded ☁️"); return }
+  CH = { remote, ts }; go("syncChoice");      // both this device and the account have progress: let the learner choose
+}
+let CH = null;
+const summary = (st) => { const r = (st.road || []).length, d = Object.keys(st.done || {}).filter((id) => (st.road || []).some((x) => x.id == id)).length; return `${d} of ${r} lessons done` + (st.updatedAt ? ` · last used ${new Date(st.updatedAt).toLocaleDateString()}` : "") };
+V.syncChoice = () => {
+  if (!CH) { go("home"); return } document.title = "Choose your progress · AI PM Coach";
+  app.innerHTML = `<h1>Which progress should we keep?</h1><p class=mu>Your account already has saved progress, and this browser has different progress from before you signed in. Choose one; the other will be replaced.</p>
+<div class=grid2><div class=card><span class=eyebrow>In your account</span><h3>${esc(summary(CH.remote))}</h3><button class=btn data-c=keepRemote>Use my account's progress</button></div>
+<div class=card><span class=eyebrow>In this browser</span><h3>${esc(summary(S))}</h3><button class="btn g" data-c=keepLocal>Use this browser's progress</button></div></div>`
+};
+A.keepRemote = () => { const c = CH; CH = null; adopt(c.remote, c.ts); go("home"); toast("Loaded the progress from your account ☁️") };
+A.keepLocal = async () => { const c = CH; CH = null; S.acct = AU.email; S.syncedAt = c.ts; await push(true); go("home"); toast("This browser's progress is now saved to your account ☁️") };
+function syncBadge(err) { const el = $("#syncState"); if (!el) return; el.textContent = err ? "Couldn't save to your account just now. We'll retry automatically." : S.syncedAt ? `Saved to your account ${new Date(S.syncedAt).toLocaleString()}` : "Saving..." }
+A.syncNow = async () => { await push(true); await pull(); syncBadge(); toast("Synced ☁️") };
+A.signout = async () => {
+  if (S.dirty) await push(true);
+  if (!confirm("Sign out? Your progress stays saved in your account, and it will be removed from this browser.")) return;
+  const theme = S.theme, consent = S.consent; AU = null; saveAuth(); S = { theme, consent }; initState(); saveLocal(); ev("signout"); go("land"); toast("Signed out");
+};
+A.deleteAccount = async () => {
+  if (!confirm("Delete your account and all progress saved in it? This can't be undone.")) return;
+  try { await acc({ action: "delete" }) } catch (e) { toast("Couldn't delete your account right now. Please try again."); return }
+  const theme = S.theme; AU = null; saveAuth(); S = { theme }; initState(); saveLocal(); go("land"); toast("Your account and its data were deleted.");
+};
+V.account = () => {
+  document.title = "Account · AI PM Coach";
+  if (!AU) { app.innerHTML = `<h1>Save your progress</h1><div class=card><p>Sign in to keep your roadmap, answers, simulator scores and capstone in your account, so you can continue on any device.</p>${ACC.on ? `<button class=btn data-c=signin>Continue with Google</button>` : `<p class=help>Accounts aren't switched on for this site yet.</p>`}<p class=help style="margin-top:12px">We'll get your name and email from Google. See the <button class=lnk data-c="go:privacy">privacy notice</button>.</p></div>`; return }
+  app.innerHTML = `<h1>Your account</h1><div class=card><p style="margin-top:0"><b>${esc(AU.name || "Signed in")}</b><br><span class=mu>${esc(AU.email || "")}</span></p><p class=sub id=syncState></p><div class="row l"><button class="btn g sm" data-c=syncNow>Sync now</button><button class="btn g sm" data-c=signout>Sign out</button></div></div>
+<div class=card><span class=eyebrow>Your data</span><p class=help>Download a copy of your progress, or permanently delete your account and everything saved in it.</p><button class="btn g sm" data-c=exportData>Download my data</button> <button class="btn danger sm" data-c=deleteAccount>Delete my account</button></div>`;
+  syncBadge();
+};
+async function startAccounts() {
+  try { const st = JSON.parse(sessionStorage.getItem("aipm_acc") || "null"); if (st) ACC.on = st.on } catch (e) { }
+  const fresh = takeRedirect();
+  if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } renderNav(); if (S.view == "home" || S.view == "account") render() }).catch(() => { });
+  if (!AU) return;
+  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); if (S.view == "admin") V.admin() }
+  catch (e) { if (fresh) toast("Sign-in couldn't be completed. Please try again.") }
+}
+document.addEventListener("visibilitychange", () => { if (!AU) return; if (document.visibilityState == "hidden") { if (S.dirty) push() } else if (Date.now() - lastPull > 60000) pull() });
+
 // ================= Admin (hidden: /admin) =================
+let ADM = null;
 V.admin = () => {
   document.title = "Admin · AI PM Coach"; const c = evCount;
-  const rows = [["Landing visits", "visit"], ["Assessments started", "assess_start"], ["Assessments completed", "assess_done"], ["Roadmaps generated", "roadmap"], ["Lessons opened", "lesson_open"], ["Lessons completed", "lesson_done"], ["Practice answers", "practice"], ["Mentor messages", "mentor"], ["Reflection reviews", "reflect_feedback"], ["Daily challenges", "daily"], ["Review cards", "review"], ["Role-play turns", "roleplay_turn"], ["Role-plays scored", "roleplay_score"], ["Interview answers scored", "interview_score"], ["PRD section reviews", "prd_review"], ["Achievements", "achievement"], ["Feedback sent", "feedback"]];
-  app.innerHTML = `<button class="btn g sm" data-c="go:land">&larr; Back</button><h1 style="margin-top:14px">Admin (this browser)</h1><div class=card>${rows.map((a) => `<div class=row><span>${a[0]}</span><b>${c(a[1])}</b></div>`).join("")}</div>
-<p class=mu>These counts cover only this browser. ${CFG.posthogKey ? "Cross-user analytics (for visitors who consented) are in your PostHog project." : "Add a PostHog key in js/config.js to see real usage across all visitors."}</p>`
+  const rows = [["Landing visits", "visit"], ["Assessments completed", "assess_done"], ["Lessons completed", "lesson_done"], ["Mentor messages", "mentor"], ["Role-plays scored", "roleplay_score"], ["Interview answers scored", "interview_score"], ["Feedback sent", "feedback"]];
+  const local = `<details class="card flat"><summary><b>This browser's activity</b></summary>${rows.map((a) => `<div class=row><span>${a[0]}</span><b>${c(a[1])}</b></div>`).join("")}</details>`;
+  const head = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back</button><h1 style="margin-top:14px">Admin dashboard</h1>`;
+  if (!AU) { app.innerHTML = head + `<div class=card><p>Sign in with an admin Google account to see sign-ins and active users.</p>${ACC.on ? `<button class=btn data-c=signin>Continue with Google</button>` : `<p class=help>Accounts aren't configured yet. Follow the "Accounts" steps in the README.</p>`}</div>` + local; return }
+  if (!AU.admin) { app.innerHTML = head + `<div class=card><p>You're signed in as <b>${esc(AU.email || "")}</b>, which isn't an admin account. Add this email to <code>ADMIN_EMAILS</code> in Netlify and redeploy.</p></div>` + local; return }
+  app.innerHTML = head + `<div id=adm><p class=mu>Loading...</p></div>` + local;
+  acc({ action: "admin" }).then((d) => { ADM = d; admH() }).catch((e) => { const el = $("#adm"); if (el) el.innerHTML = `<div class="rfb er">Couldn't load the dashboard (${esc(e.code || "error")}). Check the Supabase settings and the account function log in Netlify.</div>` });
 };
+const fmtD = (s) => s ? new Date(s).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : "-";
+function admChart(series) {
+  // Grouped bars: active users (teal) and sign-ins (amber) per day. Same unit (people / sign-ins per day), one axis.
+  const W = Math.max(320, Math.min(700, (app.clientWidth || 700) - 44)), H = 220, pl = 30, pb = 26, pt = 10, n = series.length, max = Math.max(1, ...series.map((d) => Math.max(d.active, d.logins)));
+  const step = Math.ceil(max / 4) || 1, top = step * 4, gw = (W - pl) / n, bw = Math.min(16, (gw - 8) / 2), y = (v) => pt + (H - pt - pb) * (1 - v / top);
+  const bar = (x, v, col, lab) => { if (!v) return ""; const h = (H - pb) - y(v), r = Math.min(4, h, bw / 2), yy = y(v); return `<path d="M${x},${H - pb} V${yy + r} Q${x},${yy} ${x + r},${yy} H${x + bw - r} Q${x + bw},${yy} ${x + bw},${yy + r} V${H - pb} Z" fill="${col}"/>` };
+  let g = ""; for (let i = 0; i <= 4; i++) { const v = step * i; g += `<line x1=${pl} x2=${W} y1=${y(v)} y2=${y(v)} stroke="var(--bd)" stroke-width=1 /><text x=${pl - 6} y=${y(v) + 4} text-anchor=end class=ax>${v}</text>` }
+  const bars = series.map((d, i) => { const x0 = pl + i * gw + (gw - bw * 2 - 2) / 2, lbl = new Date(d.day + "T12:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
+    return `<g class=hit><title>${lbl}: ${d.active} active user${d.active == 1 ? "" : "s"}, ${d.logins} sign-in${d.logins == 1 ? "" : "s"}, ${d.signups} new</title><rect x=${pl + i * gw} y=${pt} width=${gw} height=${H - pt - pb} fill=transparent />${bar(x0, d.active, "var(--c1)")}${bar(x0 + bw + 2, d.logins, "var(--c2)")}<text x=${pl + i * gw + gw / 2} y=${H - 8} text-anchor=middle class=ax>${i % 2 == 1 || n <= 7 ? new Date(d.day + "T12:00:00").getDate() : ""}</text></g>` }).join("");
+  return `<svg class=chart viewBox="0 0 ${W} ${H}" role=img aria-label="Active users and sign-ins per day for the last ${n} days">${g}<line x1=${pl} x2=${W} y1=${H - pb} y2=${H - pb} stroke="var(--mu)" stroke-width=1 />${bars}</svg>`;
+}
+function admH() {
+  const d = ADM, k = d.kpi, el = $("#adm"); if (!el) return;
+  const tile = (v, l) => `<div class="card flat"><div class=big>${v}</div><p class=sub>${l}</p></div>`;
+  el.innerHTML = `<p class=mu style="margin-top:0">Signed-in learners only · days in ${esc(d.timezone)} · today is ${fmtD(d.today + "T12:00:00")}. <button class=lnk data-c=admReload>Refresh</button></p>
+<div class="grid3 kpis">${tile(k.loginsToday, "sign-ins today")}${tile(k.activeToday, "active users today")}${tile(k.newToday, "new sign-ups today")}${tile(k.active7, "active in the last 7 days")}${tile(k.active30, "active in the last 30 days")}${tile(k.totalUsers, "accounts in total")}</div>
+<div class=card><span class=eyebrow>Last 14 days</span><div class=legend style="justify-content:flex-start;margin:6px 0 4px"><span><i style="background:var(--c1)"></i>Active users</span><span><i style="background:var(--c2)"></i>Sign-ins</span></div>${admChart(d.series)}
+<details><summary class=sub>Show as a table</summary><table class=tbl><tr><th>Day</th><th>Active users</th><th>Sign-ins</th><th>New sign-ups</th></tr>${d.series.slice().reverse().map((r) => `<tr><td>${fmtD(r.day + "T12:00:00")}</td><td>${r.active}</td><td>${r.logins}</td><td>${r.signups}</td></tr>`).join("")}</table></details></div>
+<div class=card><span class=eyebrow>Learners (${d.users.length})</span><div class=tscroll><table class=tbl><tr><th>Learner</th><th>Joined</th><th>Last active</th><th>Active days (30d)</th><th>Lessons</th></tr>${d.users.map((u) => `<tr><td><b>${esc(u.name || "-")}</b><br><span class=sub>${esc(u.email)}</span></td><td>${fmtD(u.joined)}</td><td>${fmtD(u.lastActive || u.lastSignIn)}</td><td>${u.activeDays30}</td><td>${u.lessonsDone}/${u.lessonsTotal || "-"}</td></tr>`).join("") || '<tr><td colspan=5 class=sub>No accounts yet.</td></tr>'}</table></div></div>
+<p class=help>Guests who never sign in aren't counted here; use PostHog analytics (js/config.js) to include them.</p>`;
+}
+A.admReload = () => { const el = $("#adm"); if (el) el.innerHTML = "<p class=mu>Loading...</p>"; acc({ action: "admin" }).then((d) => { ADM = d; admH() }).catch(() => toast("Couldn't refresh")) };
 
 // ================= Analytics consent (PostHog, EU) =================
 function loadPostHog() {
@@ -736,4 +886,4 @@ initState(); applyTheme();
 if (isAdminURL()) S.view = "admin"; else if (S.view == "admin") S.view = S.profile ? "home" : "land";
 if (!S.view || (S.view == "land" && S.profile && S.road)) S.view = S.profile && S.road ? "home" : "land";
 if (S.view == "quiz" && !S.draft) S.view = S.profile ? "prof" : "land";
-render(); consentBanner(); loadPostHog(); checkAch();
+render(); consentBanner(); loadPostHog(); checkAch(); startAccounts();
