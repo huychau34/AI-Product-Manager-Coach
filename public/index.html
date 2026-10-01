@@ -22,9 +22,14 @@
 </head>
 <body>
 <header class="nav-top" id="nav"></header>
-<main class="w" id="app" tabindex="-1"></main>
+<main class="w" id="app" tabindex="-1">
+ <!-- Shown until the app loads (and to crawlers that don't run JavaScript). -->
+ <h1>AI PM Coach: become an AI Product Manager</h1>
+ <p>AI PM Coach is a free, personalised learning app for product managers who want to work on AI products. A short assessment creates your learning roadmap. Lessons combine videos, explanations and further reading with practice questions, reflection feedback and an AI Mentor. Role-play and interview simulators, a capstone AI PRD and a certificate help you prove your skills. You can use it without an account, or sign in with Google to save your progress across devices.</p>
+ <p><a href="/learn/">Browse topics</a> · <a href="/privacy.html">Privacy Policy</a></p>
+</main>
 <footer class="ft">
- <a href="#" data-c="go:about">About</a>·<a href="/learn/">Topics</a>·<a href="#" data-c="go:privacy">Privacy</a>·<a href="#" data-c="fb">Give feedback</a>
+ <a href="#" data-c="go:about">About</a>·<a href="/learn/">Topics</a>·<a href="/privacy.html">Privacy Policy</a>·<a href="#" data-c="fb">Give feedback</a>
 </footer>
 <!-- Static copy of the feedback form so Netlify Forms can detect it at deploy time. -->
 <form name="feedback" data-netlify="true" netlify-honeypot="bot-field" hidden><input type="hidden" name="form-name" value="feedback"><input name="type"><input name="rating"><input name="lesson"><textarea name="message"></textarea><input name="email"><input name="bot-field"></form>
