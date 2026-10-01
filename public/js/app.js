@@ -108,14 +108,22 @@ const AIERR = {
   api_permission: "The API key doesn't have permission to use this model.",
   overloaded: "The AI service is very busy right now. Please try again in a minute.",
   empty: "The AI didn't reply. Please try again.",
+  login_required: "Sign in with Google to use the AI coach. It's free.",
   bad_format: "The AI reply came back in an unexpected format. Please try again.",
 };
 const aiErr = (e) => AIERR[e && e.code] || "The AI features are unavailable right now. Please try again in a moment.";
-async function ai(payload, onText) {
+async function ai(payload, onText, retried) {
   let r;
-  try { r = await fetch("/api/ai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }) }
+  if (AU && AU.rt && AU.exp && AU.exp - Date.now() < 60000) await refreshToken();
+  const h = { "Content-Type": "application/json" }; if (AU && AU.at) h.Authorization = "Bearer " + AU.at;   // AI features need a signed-in learner
+  try { r = await fetch("/api/ai", { method: "POST", headers: h, body: JSON.stringify(payload) }) }
   catch (e) { throw { code: /^https?:$/.test(location.protocol) ? "offline" : "not_hosted" } }
-  if (!r.ok) { let err = ""; try { err = (await r.json()).error || "" } catch (e) { } throw { code: r.status == 404 || r.status == 405 || r.status == 501 ? "not_set_up" : AIERR[err] ? err : r.status == 429 ? "rate_limited" : "server_error" } }
+  if (!r.ok) { let err = ""; try { err = (await r.json()).error || "" } catch (e) { }
+    if (err == "login_required") {
+      if (AU && !retried && await refreshToken()) return ai(payload, onText, true);
+      if (AU) { AU = null; saveAuth() } ACC.on = true; renderNav(); wall("ai"); throw { code: "login_required" };
+    }
+    throw { code: r.status == 404 || r.status == 405 || r.status == 501 ? "not_set_up" : AIERR[err] ? err : r.status == 429 ? "rate_limited" : "server_error" } }
   const rd = r.body.getReader(), dec = new TextDecoder(); let text = "";
   for (; ;) { const { done, value } = await rd.read(); if (done) break; text += dec.decode(value, { stream: true }); if (onText) onText(text) }
   if (!text.trim()) throw { code: "empty" };
@@ -144,6 +152,24 @@ ${r.extra ? `<h4>${extraTitle}</h4><div class=outline>${esc(r.extra)}</div>` : "
 // ---------------- Navigation ----------------
 const A = {};                                // click actions, called via data-c="name:args"
 const IN = {};                               // input handlers, called via data-in="name:arg"
+// ---------------- Sign-in wall: guests get the assessment, roadmap and first lesson; AI needs an account ----------------
+const guest = () => ACC.on && !AU;
+const freeId = () => (S.road && S.road[0] ? S.road[0].id : null);
+const locked = (id) => guest() && id != freeId();
+function wall(kind) {
+  if (document.getElementById("wall")) return;
+  const t = kind == "lesson"
+    ? ["🔓", "Sign in to unlock your full roadmap", "Your first lesson is free. Sign in with Google to unlock every lesson in your roadmap, plus your AI coach."]
+    : ["✨", "Sign in to use your AI coach", "The AI Mentor, reflection feedback, fresh practice questions, the simulators and the PRD review are for signed-in learners."];
+  const d = document.createElement("div"); d.id = "wall"; d.className = "wall"; d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "wallH");
+  d.innerHTML = `<div class="card wall-c"><div class=wall-i aria-hidden=true>${t[0]}</div><h2 id=wallH>${t[1]}</h2><p class=help>${t[2]} It's free, takes a few seconds, and keeps the progress you've made so far.</p><button class=btn data-c=signin>Continue with Google</button><button class=lnk data-c=wallClose>Not now</button></div>`;
+  d.addEventListener("click", (e) => { if (e.target === d) A.wallClose() });
+  document.body.append(d); ev("wall_shown", { kind }); const b = d.querySelector(".btn"); if (b) b.focus();
+}
+A.wallClose = () => { const w = document.getElementById("wall"); if (w) w.remove() };
+document.addEventListener("keydown", (e) => { if (e.key == "Escape") A.wallClose() });
+const needAcc = (kind = "ai") => { if (!guest()) return false; wall(kind); return true };
+const lockTxt = (t) => (guest() ? "🔒 " : "") + t;
 let V = {};                                  // views
 function go(v, cur) { if (v != "admin") leaveAdminURL(); S.view = v; if (cur !== undefined) S.cur = cur; saveLocal(); render(); window.scrollTo(0, 0) }
 A.go = go;
@@ -373,15 +399,15 @@ V.road = () => {
   const stages = [...new Set(r.map((x) => L(x.id).stage))].sort();
   let n = 0;
   app.innerHTML = `<div class=row><h1>Your roadmap</h1><button class="btn g sm" data-c="go:prof">Edit profile</button></div>
-<div class=bar><i style="width:${dn / r.length * 100}%"></i></div><p class=mu>${dn} of ${r.length} lessons complete · about ${Math.max(1, Math.ceil(mins / 60 / (S.w || 2)))} week${Math.ceil(mins / 60 / (S.w || 2)) > 1 ? "s" : ""} at your pace (${Math.round(mins / 60 * 10) / 10} hours in total)</p>
+<div class=bar><i style="width:${dn / r.length * 100}%"></i></div>${guest() ? `<div class="card flat" style="border-color:var(--ac)"><b>Your first lesson is free.</b><p class=help style="margin:4px 0 10px">Sign in with Google (free) to unlock the rest of your roadmap and your AI coach. Your progress is kept.</p><button class="btn sm" data-c=signin>Continue with Google</button></div>` : ""}<p class=mu>${dn} of ${r.length} lessons complete · about ${Math.max(1, Math.ceil(mins / 60 / (S.w || 2)))} week${Math.ceil(mins / 60 / (S.w || 2)) > 1 ? "s" : ""} at your pace (${Math.round(mins / 60 * 10) / 10} hours in total)</p>
 ${stages.map((s) => { const items = r.filter((x) => L(x.id).stage == s), sm = items.reduce((a, x) => a + L(x.id).min, 0), sd = items.filter((x) => S.done[x.id]).length;
     return `<div class=stage-h><h2>${C.STAGES[s]}</h2><span class=sub>${sd}/${items.length} done · ${sm} min</span></div>` + items.map((it) => { n++; const l = L(it.id), done = S.done[it.id], cf = S.conf[it.id], isNext = it.id == nx;
-      return `<div class="card lcard ${done ? "done" : ""} ${isNext ? "next" : ""}"><div class=num aria-hidden=true>${done ? "✓" : n}</div><div class=body><b>${l.title}</b><span class=sub>${l.min} min · ${it.d}${cf && cf.pre && cf.post ? ` · confidence ${cf.pre}→${cf.post}` : ""}</span><div style="margin-top:6px">${done ? '<span class="st d">Completed</span>' : isNext ? '<span class="pill hot">Next up</span>' : S.open[it.id] ? '<span class="st p">In progress</span>' : '<span class="st n">Not started</span>'}</div></div><button class="btn sm go ${done ? "g" : ""}" data-c="openL:${it.id}">${done ? "Review" : S.open[it.id] ? "Continue" : "Start"}</button></div>` }).join("") }).join("")}
+      return `<div class="card lcard ${done ? "done" : ""} ${isNext ? "next" : ""}"><div class=num aria-hidden=true>${done ? "✓" : n}</div><div class=body><b>${l.title}</b><span class=sub>${l.min} min · ${it.d}${cf && cf.pre && cf.post ? ` · confidence ${cf.pre}→${cf.post}` : ""}</span><div style="margin-top:6px">${done ? '<span class="st d">Completed</span>' : isNext ? '<span class="pill hot">Next up</span>' : S.open[it.id] ? '<span class="st p">In progress</span>' : '<span class="st n">Not started</span>'}</div></div><button class="btn sm go ${done ? "g" : ""}" data-c="openL:${it.id}">${locked(it.id) ? "🔒 Unlock" : done ? "Review" : S.open[it.id] ? "Continue" : "Start"}</button></div>` }).join("") }).join("")}
 <div class="card flat" style="margin-top:24px"><b>Finished your roadmap?</b><p class=help>The capstone PRD, the practice studio and your certificate are waiting.</p><button class="btn sm g" data-c="go:prd">Capstone</button> <button class="btn sm g" data-c="go:cert">Certificate</button></div>`
 };
 
 // ================= Lesson =================
-A.openL = (id) => { if (!S.open[id]) { S.open[id] = 1; save(); ev("lesson_open", { id }) } go("lesson", id) };
+A.openL = (id) => { if (locked(id)) { wall("lesson"); return } if (!S.open[id]) { S.open[id] = 1; save(); ev("lesson_open", { id }) } go("lesson", id) };
 const STEP_NAMES = [["video", "Video", "sec-video"], ["read", "Read", "sec-read"], ["practice", "Practice", "sec-practice"], ["reflect", "Reflect", "sec-reflect"], ["mentor", "Mentor", "sec-mentor"]];
 const stepsOf = (id) => (S.steps[id] = S.steps[id] || {});
 function markStep(k) { const id = S.cur, s = stepsOf(id); if (s[k]) return; s[k] = 1; save(); const b = $(`#stepsNav [data-step="${k}"]`); if (b) { b.classList.add("ok"); b.firstChild.textContent = "✓ " } if (k == "practice") finH() }
@@ -389,6 +415,7 @@ A.jump = (sec) => { const el = document.getElementById(sec); if (el) { const y =
 let readObs = null;
 V.lesson = () => {
   const l = L(S.cur); if (!l) { go("road"); return }
+  if (locked(l.id)) { go("road"); wall("lesson"); return }
   const id = l.id, it = (S.road || []).find((x) => x.id == id) || { d: "Standard" }, st = stepsOf(id), cf = S.conf[id] || {};
   S.chat[id] = S.chat[id] || [];
   document.title = l.title + " · AI PM Coach";
@@ -402,9 +429,9 @@ ${cf.pre ? "" : `<div class="card flat" id=confPre><b>Before you start: how conf
 <p class=mu style="margin:18px 0 4px"><b>Go deeper</b> · further reading (opens in a new tab)</p>${l.reads.map((r) => `<a class=rd href="${esc(r[2])}" target=_blank rel="noopener noreferrer"><i aria-hidden=true>↗</i><span><b>${esc(r[0])}</b><span class=mu>${esc(r[1])} · ${esc(r[3])}</span></span></a>`).join("")}<span id=readEnd></span></div>
 <div class=card id=sec-practice><span class=eyebrow>Practice</span><div id=pr></div></div>
 <div class=card id=sec-reflect>${reflectH(l)}</div>
-<div class=card id=sec-mentor><span class=eyebrow>AI Mentor</span><p class=help>Explain the concept in your own words and get feedback, or ask anything about it.</p><div id=ch class=chat aria-live=polite></div>
+<div class=card id=sec-mentor><span class=eyebrow>AI Mentor</span><p class=help>Explain the concept in your own words and get feedback, or ask anything about it.</p>${guest() ? `<p>🔒 The AI Mentor is for signed-in learners. Sign in with Google (free) to chat about this lesson, get feedback on your explanations and ask "why" on practice answers.</p><button class=btn data-c=signin>Continue with Google</button></div>` : `<div id=ch class=chat aria-live=polite></div>
 <textarea id=mi rows=2 data-enter=ask placeholder="Explain it, or ask a question... (Enter to send, Shift+Enter for a new line)"></textarea>
-<div class=row style="margin-top:10px"><button class=btn data-c=ask id=askBtn>Send</button><button class="lnk" data-c=clearChat>Clear chat</button></div></div>
+<div class=row style="margin-top:10px"><button class=btn data-c=ask id=askBtn>Send</button><button class="lnk" data-c=clearChat>Clear chat</button></div></div>`}
 <div id=finbox></div>`;
   rv(); rp(); chatH(); finH();
   if (readObs) readObs.disconnect();
@@ -445,12 +472,12 @@ function rp() {
   if (st.i >= qs.length) {
     const n = qs.filter((q, j) => okAt(st, qs, j)).length; markStep("practice");
     el.innerHTML = `${dots}<h2>${n} / ${qs.length} correct ${n == qs.length ? "🏆" : n >= qs.length / 2 ? "👏" : "💪"}</h2><p class=mu>${n == qs.length ? "Perfect! Reflect on the lesson next, then mark it complete." : "Missed questions were added to your smart review, so you'll see them again in a day or two."}</p>
-<div class=nav><button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button><span class=row><button class="btn g sm" data-c="pretry">Try again (shuffled)</button><button class="btn sm" data-c="pz">✨ New AI questions</button></span></div>`; return
+<div class=nav><button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button><span class=row><button class="btn g sm" data-c="pretry">Try again (shuffled)</button><button class="btn sm" data-c="pz">${guest() ? "🔒" : "✨"} New AI questions</button></span></div>`; return
   }
   const q = qs[st.i], sel = st.a[st.i] || [], k = st.k[st.i], good = k && okAt(st, qs, st.i);
   el.innerHTML = `${dots}<p class=mu>Question ${st.i + 1} of ${qs.length}${q.m ? " · select all that apply" : ""}</p><p><b>${esc(fillX(q.q))}</b></p>
 <div class="tiles pr">${q.o.map((o, j) => tileH(o, !k && sel.includes(j), `ps:${j}`, String.fromCharCode(65 + j), "", q.m, k ? (q.c.includes(j) ? "good" : sel.includes(j) ? "bad" : "dim") : "")).join("")}</div>
-${k ? `<p><b>${good ? "Correct! 🎉" : "Not quite."}</b> ${esc(q.e)}</p>${good ? "" : `<p><button class="btn g sm" data-c="why:${st.i}">💬 Ask the mentor why</button></p>`}` : ""}
+${k ? `<p><b>${good ? "Correct! 🎉" : "Not quite."}</b> ${esc(q.e)}</p>${good ? "" : `<p><button class="btn g sm" data-c="why:${st.i}">${guest() ? "🔒" : "💬"} Ask the mentor why</button></p>`}` : ""}
 <div class=nav>${st.i > 0 ? '<button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button>' : "<span></span>"}${k ? `<button class=btn data-c="pn:1">${st.i == qs.length - 1 ? "See results" : "Next"} →</button>` : `<button class=btn data-c="pc" ${sel.length ? "" : "disabled"}>Check answer</button>`}</div>`
 }
 A.ps = (j) => { const st = pst(), q = pqs()[st.i]; if (st.k[st.i]) return; let a = st.a[st.i] || []; a = q.m ? (a.includes(j) ? a.filter((x) => x != j) : a.concat(j)) : [j]; st.a[st.i] = a; save(); $$("#pr .opt").forEach((b, n) => { b.classList.toggle("on", a.includes(n)); b.setAttribute("aria-pressed", a.includes(n)) }); const cb = $('#pr [data-c="pc"]'); if (cb) cb.disabled = !a.length };
@@ -459,7 +486,7 @@ A.pn = (d) => { const st = pst(); st.i = Math.max(0, st.i + d); save(); rp() };
 A.pretry = () => { const st = pst(), qs = pqs().map((q) => { const order = shuffle(q.o.map((_, i) => i)); return { q: q.q, o: order.map((i) => q.o[i]), c: q.c.map((c) => order.indexOf(c)), e: q.e } }); S.pr[S.cur] = { i: 0, a: [], k: [], qs, seen: st.seen }; save(); rp() };
 let gen = false;
 A.pz = async () => {
-  if (gen) return; const id = S.cur, old = pst(), seen = (old.seen || []).concat(pqs().map((q) => q.q)).slice(-40), el = $("#pr");
+  if (gen || needAcc()) return; const id = S.cur, old = pst(), seen = (old.seen || []).concat(pqs().map((q) => q.q)).slice(-40), el = $("#pr");
   gen = true; el.innerHTML = '<p class=mu>Writing new practice questions for you...</p>';
   try {
     const arr = await aiJSON({ mode: "questions", info: info(id), seen }, /\[[\s\S]*\]/);
@@ -470,6 +497,7 @@ A.pz = async () => {
   gen = false; rp()
 };
 A.why = (i) => {
+  if (needAcc()) return;
   const st = pst(), q = pqs()[i], mine = (st.a[i] || []).map((j) => q.o[j]), right = q.c.map((j) => q.o[j]);
   const box = $("#mi"); box.value = `In the practice question "${fillX(q.q)}", I chose "${mine.join('", "')}", but the right answer is "${right.join('", "')}". Can you explain why, and what I misunderstood?`;
   A.jump("sec-mentor"); A.ask();
@@ -480,11 +508,12 @@ const refs = (id) => { const r = S.ref[id]; return Array.isArray(r) ? r : r ? [r
 function reflectH(l) {
   const id = l.id, a = refs(id), n = a.filter((v) => v && v.trim()).length;
   return `<span class=eyebrow>Reflect</span><p class=help>Apply the idea to your own work. Aim for 2-4 sentences: name a real feature or user, explain your reasoning, and note one risk or trade-off. Then tap <b>Get feedback</b> for coaching and an example answer. <b id=rfc>${n}</b> of ${l.reflect.length} answered, saved on this device.</p>
-${l.reflect.map((r, k) => { const f = (S.rfb[id] || {})[k], cur = (a[k] || "").trim(); return `<div class=rq><span class=tag>${esc(r[0])}</span><p><b>${esc(fillX(r[1]))}</b></p><textarea class=rfa data-in="ref:${k}" rows=3 placeholder="Your answer..." aria-label="${esc(fillX(r[1]))}">${esc(a[k] || "")}</textarea><div class=rfr><button type=button class="btn g sm" data-c="rfg:${k}" id=rfb${k}>✨ Get feedback</button><span class="mu sm" id=rfm${k}></span></div><div id=rff${k}>${f ? fbBox(f, cur && cur !== f.for) : ""}</div></div>` }).join("")}`
+${l.reflect.map((r, k) => { const f = (S.rfb[id] || {})[k], cur = (a[k] || "").trim(); return `<div class=rq><span class=tag>${esc(r[0])}</span><p><b>${esc(fillX(r[1]))}</b></p><textarea class=rfa data-in="ref:${k}" rows=3 placeholder="Your answer..." aria-label="${esc(fillX(r[1]))}">${esc(a[k] || "")}</textarea><div class=rfr><button type=button class="btn g sm" data-c="rfg:${k}" id=rfb${k}>${guest() ? "🔒" : "✨"} Get feedback</button><span class="mu sm" id=rfm${k}></span></div><div id=rff${k}>${f ? fbBox(f, cur && cur !== f.for) : ""}</div></div>` }).join("")}`
 }
 IN.ref = (el, k) => { const id = S.cur, a = refs(id).slice(); a[+k] = el.value; S.ref[id] = a; const c = $("#rfc"); if (c) c.textContent = a.filter((v) => v && v.trim()).length; if (a.some((v) => v && v.trim().length >= 25)) markStep("reflect"); clearTimeout(IN._rt); IN._rt = setTimeout(save, 400) };
 const busy = {};
 A.rfg = async (k) => {
+  if (needAcc()) return;
   const id = S.cur, l = L(id), q = fillX(l.reflect[k][1]), ta = $(`.rfa[data-in="ref:${k}"]`), a = (ta ? ta.value : "").trim(), msg = $("#rfm" + k), box = $("#rff" + k), btn = $("#rfb" + k);
   if (busy["rf" + k]) return;
   if (a.length < 25) { msg.textContent = "Write a little more first (a sentence or two) so the coach has something to review."; ta && ta.focus(); return }
@@ -501,9 +530,10 @@ function chatH() {
   ch.innerHTML = (h.length ? "" : `<div class="msg a coach">Hi! I'm your AI Mentor for "${esc(l.title)}". Try explaining the main idea in your own words, and I'll give you feedback. Or pick a starter below.</div><div class=chips>${starters().map((s, i) => `<button class=chip data-c="starter:${i}">${esc(s)}</button>`).join("")}</div>`)
     + h.map((m) => `<div class="msg ${m.r == "u" ? "u" : "a"}">${esc(m.t)}</div>`).join("");
 }
-A.starter = (i) => { $("#mi").value = starters()[i]; A.ask() };
+A.starter = (i) => { if (needAcc()) return; $("#mi").value = starters()[i]; A.ask() };
 A.clearChat = () => { if (!(S.chat[S.cur] || []).length) return; if (!confirm("Clear this lesson's chat with the mentor?")) return; S.chat[S.cur] = []; save(); chatH() };
 A.ask = async () => {
+  if (needAcc()) return;
   const box = $("#mi"), m = box.value.trim(); if (!m || busy.ask) return; const id = S.cur, h = S.chat[id] = S.chat[id] || [];
   const chips = $("#ch .chips"); if (chips) chips.remove(); const coach = $("#ch .coach"); if (coach) coach.remove();
   h.push({ r: "u", t: m }); box.value = ""; save(); markStep("mentor"); act("mentor", { id });
@@ -535,15 +565,16 @@ function completeLesson() {
 V.practice = () => {
   document.title = "Practice studio · AI PM Coach";
   app.innerHTML = `<h1>Practice studio</h1><p class=mu style="margin-top:0">Practise the conversations AI PMs have every week. The AI plays the other person, then scores you and shows how to do better.${S.product ? "" : " Tip: add your product on the Home page to make scenarios more personal."}</p>
-<h2 style="margin-top:22px">🎭 Role-play simulator</h2><div class=grid2>${C.SCEN.map((s) => { const r = S.rp[s.id] || {}; return `<div class=card><span aria-hidden=true style="font-size:1.6rem">${s.icon}</span><h3>${esc(s.title)}</h3><p class=help><b>${esc(s.character)}</b> · ${esc(s.goal)}</p><div class=row><button class="btn sm" data-c="rpOpen:${s.id}">${r.msgs && r.msgs.length && !r.score ? "Continue" : "Start"}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>
+<h2 style="margin-top:22px">🎭 Role-play simulator</h2><div class=grid2>${C.SCEN.map((s) => { const r = S.rp[s.id] || {}; return `<div class=card><span aria-hidden=true style="font-size:1.6rem">${s.icon}</span><h3>${esc(s.title)}</h3><p class=help><b>${esc(s.character)}</b> · ${esc(s.goal)}</p><div class=row><button class="btn sm" data-c="rpOpen:${s.id}">${lockTxt(r.msgs && r.msgs.length && !r.score ? "Continue" : "Start")}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>
 <h2 style="margin-top:26px">🎤 Interview simulator</h2><p class=help>Timed AI PM interview questions, scored by an AI hiring manager. Aim for a structured answer in about 3 minutes.</p>
-<div class=grid2>${C.IVQ.map((q) => { const r = S.iv[q.id] || {}; return `<div class=card><span class=tag>${esc(q.cat)}</span><p style="margin:8px 0"><b>${esc(fillX(q.q))}</b></p><div class=row><button class="btn sm" data-c="ivOpen:${q.id}">${r.score ? "Try again" : "Answer"}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>`
+<div class=grid2>${C.IVQ.map((q) => { const r = S.iv[q.id] || {}; return `<div class=card><span class=tag>${esc(q.cat)}</span><p style="margin:8px 0"><b>${esc(fillX(q.q))}</b></p><div class=row><button class="btn sm" data-c="ivOpen:${q.id}">${lockTxt(r.score ? "Try again" : "Answer")}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>`
 };
 
 // ---------------- Role-play ----------------
 const rpS = () => (S.rp[S.rpid] = S.rp[S.rpid] || { msgs: [], best: 0 });
-A.rpOpen = (id) => { S.rpid = id; ev("roleplay_open", { id }); go("rp") };
+A.rpOpen = (id) => { if (needAcc()) return; S.rpid = id; ev("roleplay_open", { id }); go("rp") };
 V.rp = () => {
+  if (guest()) { go("practice"); wall("ai"); return }
   const s = C.SCEN.find((x) => x.id == S.rpid); if (!s) { go("practice"); return } const r = rpS(), turns = r.msgs.filter((m) => m.r == "u").length;
   document.title = s.title + " · Role-play";
   app.innerHTML = `<button class="btn g sm" data-c="go:practice">&larr; Practice studio</button><h1 style="margin-top:14px;font-size:1.8rem">${s.icon} ${esc(s.title)}</h1>
@@ -563,8 +594,8 @@ async function rpTurn() {
   catch (e) { live.textContent = aiErr(e); live.classList.add("merr"); if (r.msgs.length && r.msgs[r.msgs.length - 1].r == "u") r.msgs.pop(); save() }
   finally { busy.rp = 0; if (b) b.disabled = false }
 }
-A.rpSend = async () => { const i = $("#rpi"), t = i && i.value.trim(); if (!t || busy.rp) return; const r = rpS(); r.msgs.push({ r: "u", t }); i.value = ""; save(); act("roleplay_turn", { id: S.rpid }); V.rp(); await rpTurn(); if (r.msgs.filter((m) => m.r == "u").length >= 2) V.rp() };
-A.rpScore = async () => {
+A.rpSend = async () => { if (needAcc()) return; const i = $("#rpi"), t = i && i.value.trim(); if (!t || busy.rp) return; const r = rpS(); r.msgs.push({ r: "u", t }); i.value = ""; save(); act("roleplay_turn", { id: S.rpid }); V.rp(); await rpTurn(); if (r.msgs.filter((m) => m.r == "u").length >= 2) V.rp() };
+A.rpScore = async () => { if (needAcc()) return;
   const r = rpS(), box = $("#rpscore"), b = $("#rpEnd"); if (busy.rps) return; busy.rps = 1; if (b) { b.disabled = true; b.textContent = "Scoring..." } box.innerHTML = '<div class="rfb ld">Scoring your conversation...</div>';
   try { const sc = normScore(await aiJSON({ mode: "roleplay_score", scenario: S.rpid, info: info(), messages: r.msgs.map((m) => ({ role: m.r == "u" ? "user" : "assistant", content: m.t })) })); r.score = sc; r.best = Math.max(r.best || 0, sc.score); r.runs = (r.runs || 0) + 1; save(); act("roleplay_score", { id: S.rpid, score: sc.score }); V.rp() }
   catch (e) { box.innerHTML = `<div class="rfb er">${esc(aiErr(e))}</div>`; if (b) { b.disabled = false; b.textContent = "End & get my score" } }
@@ -575,8 +606,9 @@ A.rpReset = () => { const r = rpS(); r.msgs = []; r.score = null; save(); V.rp()
 // ---------------- Interview ----------------
 let IVT = null;
 const ivS = () => (S.iv[S.ivid] = S.iv[S.ivid] || { answer: "", best: 0 });
-A.ivOpen = (id) => { S.ivid = id; const r = ivS(); if (r.score) { r.score = null; r.answer = "" } save(); ev("interview_open", { id }); go("iv") };
+A.ivOpen = (id) => { if (needAcc()) return; S.ivid = id; const r = ivS(); if (r.score) { r.score = null; r.answer = "" } save(); ev("interview_open", { id }); go("iv") };
 V.iv = () => {
+  if (guest()) { go("practice"); wall("ai"); return }
   const q = C.IVQ.find((x) => x.id == S.ivid); if (!q) { go("practice"); return } const r = ivS(); clearInterval(IVT); IVT = null;
   document.title = "Interview practice · AI PM Coach";
   app.innerHTML = `<button class="btn g sm" data-c="go:practice">&larr; Practice studio</button><span class=tag style="margin-left:8px">${esc(q.cat)}</span>
@@ -591,7 +623,7 @@ IN.ivText = (el, init) => {
   const w = $("#ivWords"); if (w) w.textContent = `${(el.value || "").trim().split(/\s+/).filter(Boolean).length} words`;
   if (init != "init" && !IVT && $("#ivTimer")) { let left = 180; IVT = setInterval(() => { left--; const t = $("#ivTimer"); if (!t) { clearInterval(IVT); IVT = null; return } t.textContent = left > 0 ? `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` : "Time's up - wrap up and submit"; t.classList.toggle("low", left <= 30); if (left <= 0) clearInterval(IVT) }, 1000) }
 };
-A.ivSubmit = async () => {
+A.ivSubmit = async () => { if (needAcc()) return;
   const r = ivS(), a = ($("#iva").value || "").trim(), box = $("#ivres"), b = $("#ivBtn"); if (busy.iv) return;
   if (a.split(/\s+/).length < 25) { box.innerHTML = `<p class=err>Write a fuller answer first (at least a few sentences) so it can be scored fairly.</p>`; return }
   busy.iv = 1; b.disabled = true; b.textContent = "Scoring..."; box.innerHTML = '<div class="rfb ld">The hiring manager is reviewing your answer...</div>'; clearInterval(IVT); IVT = null;
@@ -606,11 +638,11 @@ V.prd = () => {
   app.innerHTML = `<h1>Capstone: your AI PRD</h1><p class=mu style="margin-top:0">Write a product requirements document for a real AI feature, one section at a time. Each section gets an expert review. It makes a strong portfolio piece and interview story.</p>
 <div class="card flat"><div class=row><b id=prdN>${n} of ${C.PRD.length} sections drafted</b><span class=row><button class="btn g sm" data-c=prdCopy>Copy</button><button class="btn sm" data-c=prdDownload>Download (.md)</button></span></div><div class=bar style="margin-top:10px"><i id=prdBar style="width:${n / C.PRD.length * 100}%"></i></div>
 <label class=fl for=prdTitle>Feature name</label><input id=prdTitle data-in=prdTitle maxlength=120 placeholder="e.g. AI reply drafts for payment-support agents" value="${esc(S.prd.title || "")}"></div>
-${C.PRD.map((p, i) => { const f = S.prd.fb[p.id], cur = (S.prd.sec[p.id] || "").trim(); return `<div class=card id="prd-${p.id}"><span class=eyebrow>${i + 1}. ${esc(p.title)}</span><p class=help>${esc(p.guide)}</p><textarea rows=5 data-in="prdSec:${p.id}" placeholder="${esc(p.ph)}" aria-label="${esc(p.title)}">${esc(S.prd.sec[p.id] || "")}</textarea><div class=rfr><button class="btn g sm" data-c="prdRev:${p.id}" id="prdb-${p.id}">✨ Review this section</button><span class="mu sm" id="prdm-${p.id}"></span></div><div id="prdf-${p.id}">${f ? fbBox(f, cur && cur !== f.for, "See an improved version") : ""}</div></div>` }).join("")}`
+${C.PRD.map((p, i) => { const f = S.prd.fb[p.id], cur = (S.prd.sec[p.id] || "").trim(); return `<div class=card id="prd-${p.id}"><span class=eyebrow>${i + 1}. ${esc(p.title)}</span><p class=help>${esc(p.guide)}</p><textarea rows=5 data-in="prdSec:${p.id}" placeholder="${esc(p.ph)}" aria-label="${esc(p.title)}">${esc(S.prd.sec[p.id] || "")}</textarea><div class=rfr><button class="btn g sm" data-c="prdRev:${p.id}" id="prdb-${p.id}">${guest() ? "🔒" : "✨"} Review this section</button><span class="mu sm" id="prdm-${p.id}"></span></div><div id="prdf-${p.id}">${f ? fbBox(f, cur && cur !== f.for, "See an improved version") : ""}</div></div>` }).join("")}`
 };
 IN.prdTitle = (el) => { S.prd.title = el.value.slice(0, 120); clearTimeout(IN._pt2); IN._pt2 = setTimeout(save, 400) };
 IN.prdSec = (el, id) => { S.prd.sec[id] = el.value; clearTimeout(IN._ps); IN._ps = setTimeout(() => { save(); checkAch() }, 500); const n = prdCount(), b = $("#prdBar"), t = $("#prdN"); if (b) b.style.width = n / C.PRD.length * 100 + "%"; if (t) t.textContent = `${n} of ${C.PRD.length} sections drafted` };
-A.prdRev = async (id) => {
+A.prdRev = async (id) => { if (needAcc()) return;
   const text = (S.prd.sec[id] || "").trim(), msg = $("#prdm-" + id), box = $("#prdf-" + id), btn = $("#prdb-" + id); if (busy["prd" + id]) return;
   if (text.length < 40) { msg.textContent = "Write a few sentences first so the reviewer has something to work with."; return }
   msg.textContent = ""; busy["prd" + id] = 1; btn.disabled = true; btn.textContent = "Reviewing..."; box.innerHTML = '<div class="rfb ld">Reviewing your section...</div>';
@@ -673,7 +705,7 @@ V.privacy = () => {
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Home</button><h1 style="margin-top:14px">Privacy notice</h1><p class=mu>Plain-language summary of what happens to your data.</p>
 <div class=card><h3>Stored in your browser</h3><p>Your assessment answers, roadmap, progress, reflections, chats, simulator answers and PRD drafts are saved in this browser's local storage. If you don't sign in, we don't have a copy. Clearing your browser data deletes them, and you can also download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
 <div class=card><h3>If you sign in</h3><p>Signing in is optional and uses your <b>Google</b> account through <b>Supabase</b>, our account and database provider. We receive your name and email address from Google. Your progress is then also stored in our Supabase database so you can continue on any device, and we record the days you use the app and how often you sign in, to understand how many people use it. The site owner can see your name, email, sign-up date, last activity and lessons completed. You can delete your account and all its data at any time on the <button class=lnk data-c="go:account">Account</button> page.</p></div>
-<div class=card><h3>Sent when you use AI features</h3><p>When you use the AI Mentor, reflection feedback, new practice questions, the PRD review, role-play or interview scoring, the text you enter, your assessment answers (level, industry and goal), your product description if you added one, and the current lesson are sent to this site's server function (hosted by Netlify) and passed to <b>Anthropic</b>, which provides the Claude AI model, to generate the reply. Don't enter confidential or personal information in these features. The server doesn't store your messages; it keeps a daily request counter per visitor (an anonymised hash of your IP address) to prevent abuse, and hosting logs may record technical errors.</p></div>
+<div class=card><h3>Sent when you use AI features</h3><p>When you use the AI Mentor, reflection feedback, new practice questions, the PRD review, role-play or interview scoring, the text you enter, your assessment answers (level, industry and goal), your product description if you added one, and the current lesson are sent to this site's server function (hosted by Netlify) and passed to <b>Anthropic</b>, which provides the Claude AI model, to generate the reply. Don't enter confidential or personal information in these features. The server doesn't store your messages; it checks that you're signed in and keeps a daily request counter per account (an anonymised hash of your account ID) to prevent abuse, and hosting logs may record technical errors.</p></div>
 <div class=card><h3>Feedback form</h3><p>If you send feedback, your message, rating and, optionally, your email address are stored with <b>Netlify Forms</b> so ${esc(o.name || "the site owner")} can read and reply to them.</p></div>
 <div class=card><h3>Videos</h3><p>Lesson videos are embedded from YouTube in privacy-enhanced mode (youtube-nocookie.com). When you play a video, YouTube may store data in your browser under its own privacy policy.</p></div>
 <div class=card><h3>Analytics</h3>${CFG.posthogKey ? `<p>With your consent, we use <b>PostHog</b> (hosted in the EU) to understand how the app is used, for example which lessons people complete. We don't use it for advertising and don't sell data. You can change your choice at any time.</p><p><b>Your current choice:</b> ${S.consent == "yes" ? "analytics allowed" : S.consent == "no" ? "analytics declined" : "not chosen yet"}</p><button class="btn sm" data-c="consent:yes">Allow analytics</button> <button class="btn g sm" data-c="consent:no">Decline analytics</button>` : "<p>This site currently doesn't use analytics.</p>"}</div>
@@ -823,9 +855,9 @@ V.account = () => {
 async function startAccounts() {
   try { const st = JSON.parse(sessionStorage.getItem("aipm_acc") || "null"); if (st) ACC.on = st.on } catch (e) { }
   const fresh = takeRedirect();
-  if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } renderNav(); if (S.view == "home" || S.view == "account") render() }).catch(() => { });
+  if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } renderNav(); if (["home", "account", "road", "practice", "prd"].includes(S.view)) render() }).catch(() => { });
   if (!AU) return;
-  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); if (S.view == "admin") V.admin() }
+  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; A.wallClose(); if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); if (S.view == "admin") V.admin() }
   catch (e) { if (fresh) toast("Sign-in couldn't be completed. Please try again.") }
 }
 document.addEventListener("visibilitychange", () => { if (!AU) return; if (document.visibilityState == "hidden") { if (S.dirty) push() } else if (Date.now() - lastPull > 60000) pull() });

@@ -7,13 +7,17 @@
 // Settings (Netlify > Project configuration > Environment variables):
 //   ANTHROPIC_API_KEY         required  your key from console.anthropic.com
 //   ANTHROPIC_MODEL           optional  defaults to Claude Haiku 4.5 (fast and low cost)
-//   DAILY_LIMIT_PER_VISITOR   optional  AI requests per visitor per day (default 150)
+//   DAILY_LIMIT_PER_USER      optional  AI requests per signed-in learner per day (default 50)
+//   DAILY_LIMIT_PER_VISITOR   optional  AI requests per visitor per day when accounts are off (default 150)
 //   DAILY_LIMIT_TOTAL         optional  AI requests for the whole site per day (default 3000)
 //   ALLOWED_ORIGINS           optional  extra origins allowed to call this API, comma-separated
 //
 // Abuse protection:
 //   - Requests must come from your own site (Origin check).
 //   - The browser only sends known IDs and answer indices; prompts are built here.
+//   - When accounts are set up (SUPABASE_URL + SUPABASE_ANON_KEY + SUPABASE_SERVICE_KEY), every
+//     AI request must carry a valid Google sign-in token; guests get "login_required" and no tokens
+//     are spent. The daily cap is then counted per account, so clearing cookies doesn't reset it.
 //   - Per-visitor rate limit (20/min, config below) and daily caps (Netlify Blobs).
 //   - Inputs and chat history are length-capped; the mentor stays on topic.
 
@@ -113,19 +117,37 @@ async function sha256(s) {
   return [...new Uint8Array(buf)].slice(0, 12).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Daily caps stored in Netlify Blobs. If Blobs isn't available, requests are allowed (fail open)
-// and the per-minute rate limit still applies.
-async function overDailyLimit(context) {
+// ---------- Sign-in (only when accounts are set up) ----------
+const accountsOn = () => !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY && process.env.SUPABASE_SERVICE_KEY);
+// Checks the learner's Google sign-in token with Supabase. Returns the user id, or null.
+async function signedInUser(req) {
+  const m = (req.headers.get("authorization") || "").match(/^Bearer\s+(\S{1,4000})$/i);
+  if (!m) return null;
+  try {
+    const r = await fetch(`${process.env.SUPABASE_URL.trim().replace(/\/+$/, "")}/auth/v1/user`, { headers: { apikey: process.env.SUPABASE_ANON_KEY.trim(), Authorization: `Bearer ${m[1]}` } });
+    if (!r.ok) return null;
+    const u = await r.json();
+    return u && u.id ? String(u.id) : null;
+  } catch (e) {
+    console.error("Sign-in check failed", e && e.message);
+    return null;
+  }
+}
+
+// Daily caps stored in Netlify Blobs: per account (or per visitor when accounts are off) and for
+// the whole site. If Blobs isn't available, requests are allowed (fail open) and the per-minute
+// rate limit still applies.
+async function overDailyLimit(context, userId) {
   try {
     const store = globalThis.__TEST_BLOBS || (await import("@netlify/blobs")).getStore({ name: "ai-usage", consistency: "strong" });
     const day = new Date().toISOString().slice(0, 10);
-    const visitor = await sha256((context && context.ip) || "unknown");
-    const perVisitor = Number(process.env.DAILY_LIMIT_PER_VISITOR) || 150;
+    const who = userId ? "u-" + (await sha256(userId)) : await sha256((context && context.ip) || "unknown");
+    const perWho = userId ? Number(process.env.DAILY_LIMIT_PER_USER) || 50 : Number(process.env.DAILY_LIMIT_PER_VISITOR) || 150;
     const total = Number(process.env.DAILY_LIMIT_TOTAL) || 3000;
-    const vKey = `v/${day}/${visitor}`, tKey = `t/${day}`;
+    const vKey = `v/${day}/${who}`, tKey = `t/${day}`;
     const [v, t] = await Promise.all([store.get(vKey, { type: "json" }), store.get(tKey, { type: "json" })]);
     const vn = ((v && v.n) || 0) + 1, tn = ((t && t.n) || 0) + 1;
-    if (vn > perVisitor) return "daily_limit";
+    if (vn > perWho) return "daily_limit";
     if (tn > total) return "site_limit";
     await Promise.all([store.setJSON(vKey, { n: vn }), store.setJSON(tKey, { n: tn })]);
     return null;
@@ -207,7 +229,14 @@ export default async (req, context) => {
   const MODES = ["mentor", "questions", "reflect", "prd", "roleplay", "roleplay_score", "interview"];
   if (!MODES.includes(body.mode)) return json({ error: "bad_mode" }, 400);
 
-  const limit = await overDailyLimit(context);
+  // Guests can't use AI features once accounts are set up: no sign-in, no tokens spent.
+  let userId = null;
+  if (accountsOn()) {
+    userId = await signedInUser(req);
+    if (!userId) return json({ error: "login_required" }, 401);
+  }
+
+  const limit = await overDailyLimit(context, userId);
   if (limit) return json({ error: limit }, 429);
 
   const l = learner(body.info);

@@ -73,7 +73,7 @@ Then **Deploys → Trigger deploy → Deploy site**.
 
 **5. Test it:** open the site, click **Sign in → Continue with Google**, and you should come back signed in (your name appears top right). Then open `/admin`.
 
-How it works for learners: guests can still use the app without an account. When they sign in, their existing progress is saved to their account; on a new device it loads automatically. If a browser and the account both have different progress, the learner chooses which to keep. Changes save automatically about two seconds after each edit, and progress made on two devices is merged.
+How it works for learners: guests can take the assessment, see their roadmap and do their **first lesson** (video, reading, practice questions and reflection notes). Everything else, including **all AI features** (Mentor, reflection feedback, new AI questions, role-play, interview and PRD review), needs a free Google sign-in. The server enforces this: once accounts are set up, any AI request without a valid sign-in is refused with "login_required" before it reaches Anthropic, so guests can't spend your tokens. If accounts aren't set up, the app works for everyone as before. When they sign in, their existing progress is saved to their account; on a new device it loads automatically. If a browser and the account both have different progress, the learner chooses which to keep. Changes save automatically about two seconds after each edit, and progress made on two devices is merged.
 
 ## Turning on analytics (PostHog)
 
@@ -89,7 +89,8 @@ Visitors see a consent banner and nothing is tracked until they click **Allow**.
 |---|---|---|
 | `ANTHROPIC_API_KEY` | - | Required. Your Anthropic key |
 | `ANTHROPIC_MODEL` | `claude-haiku-4-5-20251001` | Use a different Claude model |
-| `DAILY_LIMIT_PER_VISITOR` | `150` | AI requests per visitor per day |
+| `DAILY_LIMIT_PER_USER` | `50` | AI requests per signed-in learner per day (counted per account, so new browsers or cleared cookies don't reset it) |
+| `DAILY_LIMIT_PER_VISITOR` | `150` | AI requests per visitor per day, only used if accounts aren't set up |
 | `DAILY_LIMIT_TOTAL` | `3000` | AI requests for the whole site per day |
 | `ALLOWED_ORIGINS` | - | Extra site addresses allowed to call the AI and account functions (e.g. a custom domain before DNS is final) |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY` | - | Turn on accounts (see above) |
@@ -104,7 +105,8 @@ Visitors see a consent banner and nothing is tracked until they click **Allow**.
 - AI requests must come from your own site (Origin check); others get "forbidden".
 - The browser only sends known answer numbers and IDs; the server builds every prompt, so the endpoint can't be used as a free general-purpose chatbot, and the mentor stays on topic.
 - Accounts: the database is locked (row level security with no public access); only the account function, using the secret key, reads or writes it. Every request checks the learner's Google sign-in token with Supabase, so learners can only reach their own progress, and only emails in `ADMIN_EMAILS` see the dashboard. Learners can delete their account and all its data from the Account page.
-- Limits: 20 AI requests per minute per visitor, plus daily caps per visitor and for the whole site (stored in Netlify Blobs; if Blobs is unavailable, only the per-minute limit applies).
+- Sign-in for AI: when accounts are set up, every AI request must carry a valid Google sign-in token, checked with Supabase on the server.
+- Limits: 20 AI requests per minute per visitor, plus daily caps per account (or per visitor when accounts are off) and for the whole site (stored in Netlify Blobs; if Blobs is unavailable, only the per-minute limit applies).
 - Security headers: Content-Security-Policy (only your site, YouTube's privacy-enhanced player and PostHog EU are allowed), no framing, no sniffing, strict referrer policy.
 - All AI output and user text is escaped before it's shown.
 - A privacy notice (footer → Privacy) explains what is stored where. Have it reviewed if you're unsure it fits your situation.
@@ -138,6 +140,7 @@ Hidden from the menus. Open `https://<your-site>/admin` (or `/administrator`) an
 | Google says "access blocked" or "redirect_uri_mismatch" | The redirect URI in Google Cloud must be exactly `https://xxxx.supabase.co/auth/v1/callback`, and the app must be published |
 | You return to the site but aren't signed in | Add your site to Supabase **Authentication → URL Configuration** (Site URL and Redirect URLs) |
 | Admin page says "isn't an admin account" | Add that email to `ADMIN_EMAILS` and redeploy |
-| "today's limit" | The daily cap was reached; raise `DAILY_LIMIT_PER_VISITOR` / `DAILY_LIMIT_TOTAL` if needed |
+| "today's limit" | The daily cap was reached; raise `DAILY_LIMIT_PER_USER` / `DAILY_LIMIT_TOTAL` if needed |
+| "Sign in with Google to use the AI coach" for a signed-in learner | Their session expired and couldn't be refreshed; signing out and in again fixes it |
 
 Function logs are under **Logs → Functions** in Netlify: `ai` for AI errors and `account` for sign-in and database errors. Netlify's free plan allows two rate-limit rules per site; this app uses both (AI and accounts).
