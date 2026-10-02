@@ -285,3 +285,12 @@ details summary{cursor:pointer}
 .tile.on{background:var(--card);border-color:var(--ac);box-shadow:0 0 0 3px var(--ring)}
 .tile.on .ic,.step .ic,.chip.on,.cont{background:var(--tint)}
 h1 .gr{background:none;color:var(--ac)}
+/* video rating and picker */
+.vrate{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:4px 0 12px}
+.vr-b{font-size:1.05rem;line-height:1;padding:7px 10px;border-radius:10px;border:1.5px solid var(--bd);background:var(--card);cursor:pointer;transition:border-color .15s,background .15s}
+.vr-b:hover{border-color:var(--ac)}
+.vr-b.on{border-color:var(--ac);background:var(--tint)}
+.vrate .btn.xs{margin-left:auto}
+.vlist summary{cursor:pointer;padding:4px 0;font-weight:600}
+.vlist[open] summary{margin-bottom:6px}
+.static-back{display:inline-block;margin:0 0 6px;font-weight:600}

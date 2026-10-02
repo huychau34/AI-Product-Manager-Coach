@@ -114,6 +114,7 @@ Visitors see a consent banner and nothing is tracked until they click **Allow**.
 ## Editing content
 
 - Lesson text, questions, readings and videos: `public/js/content.js`.
+- Each lesson has about 5 videos, written as `["YouTube ID", "title", "channel", "short note", level]`, where level is 1 = intro, 2 = standard, 3 = deep dive. The app picks the video that matches the learner's depth (Skim, Standard or Deep dive), prefers videos they haven't watched, and skips ones they rated 👎. After a lesson is completed, a revisit shows a different video. Learners can also tap **Show me a different video** or pick from the full list. Ratings from signed-in learners appear on the admin page under **Video ratings**; replace videos that collect many 👎.
 - If you **add or rename a lesson, scenario, interview question or PRD section**, add the same ID and title to `netlify/lib/content.mjs` too, so the server accepts it.
 - Topic pages in `public/learn/` are static copies of the lesson text; update them when you change a lesson significantly.
 
@@ -124,6 +125,7 @@ Hidden from the menus. Open `https://<your-site>/admin` (or `/administrator`) an
 - sign-ins today, active users today, new sign-ups today, active users in the last 7 and 30 days, and total accounts
 - a chart of active users and sign-ins for the last 14 days (hover a day for exact numbers, or open it as a table)
 - every learner with their join date, last activity, active days in the last 30 days and lessons completed
+- video ratings: 👍 and 👎 per lesson video
 
 "Active" means a signed-in learner opened the app that day; "sign-ins" counts each time someone signed in with Google. Guests without an account aren't included; add PostHog for those. The raw data is in Supabase (**Table Editor → activity**) if you want to export it.
 

@@ -66,7 +66,7 @@ async function dashboard() {
     const d = await r.json(), list = d.users || d || []; users = users.concat(list); if (list.length < 1000) break;
   }
   const act = await rest(`activity?day=gte.${since}&select=user_id,day,logins,pings,last_seen&limit=100000`);
-  const prog = await rest(`progress?select=user_id,updated_at,done:state->done,road:state->road&limit=100000`);
+  const prog = await rest(`progress?select=user_id,updated_at,done:state->done,road:state->road,vr:state->vr&limit=100000`);
   const days = []; for (let i = 13; i >= 0; i--) days.push(dayIn(tz, new Date(Date.now() - i * 864e5)));
   const byDay = Object.fromEntries(days.map((d) => [d, { day: d, active: 0, logins: 0, signups: 0 }]));
   const lastActive = {}, activeDays = {};
@@ -79,10 +79,13 @@ async function dashboard() {
   const pmap = Object.fromEntries((prog || []).map((p) => [p.user_id, p]));
   const inLast = (n) => { const from = dayIn(tz, new Date(Date.now() - (n - 1) * 864e5)); return new Set(act.filter((a) => a.day >= from).map((a) => a.user_id)).size };
   const t = byDay[today] || { active: 0, logins: 0, signups: 0 };
+  const vids = {};                                // video ratings (👍 / 👎) across all learners
+  for (const p of prog || []) if (p.vr && typeof p.vr == "object") for (const [id, v] of Object.entries(p.vr)) { const r = (vids[id] = vids[id] || { id, up: 0, down: 0 }); if (v > 0) r.up++; else if (v < 0) r.down++ }
   return {
     today, timezone: tz,
     kpi: { loginsToday: t.logins, activeToday: t.active, newToday: t.signups, active7: inLast(7), active30: inLast(30), totalUsers: users.length },
     series: days.map((d) => byDay[d]),
+    videos: Object.values(vids).slice(0, 500),
     users: users.map((u) => {
       const p = pmap[u.id] || {}, md = u.user_metadata || {}, done = p.done && typeof p.done === "object" ? Object.keys(p.done).length : 0, road = Array.isArray(p.road) ? p.road.length : 0;
       return { email: u.email || "", name: md.full_name || md.name || "", joined: u.created_at, lastSignIn: u.last_sign_in_at, lastActive: lastActive[u.id] || null, activeDays30: activeDays[u.id] || 0, lessonsDone: done, lessonsTotal: road };

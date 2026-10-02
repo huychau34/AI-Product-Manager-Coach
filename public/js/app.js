@@ -15,7 +15,7 @@ function load() { try { return JSON.parse(localStorage.getItem("aipm") || "{}") 
 function saveLocal() { try { localStorage.setItem("aipm", JSON.stringify(S)) } catch (e) { } }
 function save() { S.updatedAt = Date.now(); S.dirty = (S.dirty || 0) + 1; saveLocal(); if (typeof schedulePush == "function") schedulePush() }
 function initState() {
-  for (const k of ["done", "chat", "pr", "ref", "rfb", "vs", "open", "days", "rev", "daily", "conf", "ach", "rp", "iv", "steps"]) if (!S[k] || typeof S[k] != "object") S[k] = {};
+  for (const k of ["done", "chat", "pr", "ref", "rfb", "vs", "vseen", "vr", "open", "days", "rev", "daily", "conf", "ach", "rp", "iv", "steps"]) if (!S[k] || typeof S[k] != "object") S[k] = {};
   if (!S.prd || typeof S.prd != "object") S.prd = { title: "", sec: {}, fb: {} };
   if (!Array.isArray(S.ev)) S.ev = [];
   delete S.T;
@@ -121,7 +121,9 @@ async function ai(payload, onText, retried) {
   if (!r.ok) { let err = ""; try { err = (await r.json()).error || "" } catch (e) { }
     if (err == "login_required") {
       if (AU && !retried && await refreshToken()) return ai(payload, onText, true);
-      if (AU) { AU = null; saveAuth() } ACC.on = true; renderNav(); wall("ai"); throw { code: "login_required" };
+      ACC.on = true;
+      if (AU) endSession("Your session ended. Please sign in again; your progress is saved in your account."); else { renderNav(); wall("ai") }
+      throw { code: "login_required" };
     }
     throw { code: r.status == 404 || r.status == 405 || r.status == 501 ? "not_set_up" : AIERR[err] ? err : r.status == 429 ? "rate_limited" : "server_error" } }
   const rd = r.body.getReader(), dec = new TextDecoder(); let text = "";
@@ -185,10 +187,10 @@ function renderNav() {
   const due = dueCards().length, act = { lesson: "road", rp: "practice", iv: "practice", review: "home", cert: "progress", quiz: "", prof: "", account: "" }[S.view] ?? S.view;
   navEl.innerHTML = `<div class=nav-in><button class=brand data-c="go:${S.profile ? "home" : "land"}" aria-label="AI PM Coach home"><img src="/favicon.svg" alt=""><span>AI PM Coach</span></button>
 <nav class=nav-links aria-label="Main">${tabs.map(([v, t, ic]) => `<button data-c="go:${v}" class="${act == v ? "on" : ""}" ${act == v ? 'aria-current="page"' : ""}><span class=ti aria-hidden=true>${ic}</span>${t}${v == "home" && due ? `<span class=ct aria-label="${due} review cards due">${due}</span>` : ""}</button>`).join("")}</nav>
-<span class=nav-r>${AU ? `<button class=theme-btn data-c="go:account" aria-label="Your account" title="${esc(AU.email || "")}">👤 <span class=acct-l>${esc((AU.name || AU.email || "Account").split(/[ @]/)[0])}</span></button>` : ACC.on ? `<button class="theme-btn" data-c="go:account">Sign in</button>` : ""}<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${(S.theme || "light") == "dark" ? "☀️" : "🌙"}</button></span></div>`
+<span class=nav-r>${AU ? `<button class=theme-btn data-c="go:account" aria-label="Your account" title="${esc(AU.email || "")}">👤 <span class=acct-l>${esc((AU.name || AU.email || "Account").split(/[ @]/)[0])}</span></button>` : ACC.on ? `<button class="theme-btn" data-c="go:account">Sign in</button>` : ""}<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${(S.theme || "dark") == "dark" ? "☀️" : "🌙"}</button></span></div>`
 }
-function applyTheme() { document.documentElement.setAttribute("data-theme", S.theme || "light") }
-A.theme = () => { S.theme = (S.theme || "light") == "dark" ? "light" : "dark"; save(); applyTheme(); renderNav() };
+function applyTheme() { document.documentElement.setAttribute("data-theme", S.theme || "dark") }   // dark unless the learner chose light
+A.theme = () => { S.theme = (S.theme || "dark") == "dark" ? "light" : "dark"; save(); applyTheme(); renderNav() };
 // Admin is hidden from the UI: open it at /admin, /administrator or #admin.
 function isAdminURL() { return /\/(admin|administrator)\/?$/i.test(location.pathname) || /^#\/?(admin|administrator)$/i.test(location.hash) }
 function leaveAdminURL() { if (!isAdminURL()) return; try { history.replaceState(null, "", location.pathname.replace(/\/(admin|administrator)\/?$/i, "/") + location.search) } catch (e) { location.hash = "" } }
@@ -448,18 +450,41 @@ A.undOpen = () => { $("#sec-read").classList.add("open"); markStep("read") };
 // ---------------- Video ----------------
 let embedBlocked = false;
 function canEmbed() { return !embedBlocked && /^https?:$/.test(location.protocol) && window.origin && window.origin !== "null" }
+// Picks the video for a lesson: matches the learner's depth (Skim = intro, Deep dive = advanced),
+// prefers videos they haven't watched, and skips ones they rated down. The pick stays the same
+// until they finish the lesson or ask for another, so a revisit shows something new.
+const vidLevel = (it) => (it.d == "Deep dive" ? 3 : it.d == "Skim" ? 1 : 2);
+function vidRank(l) {
+  const it = (S.road || []).find((x) => x.id == l.id) || {}, want = vidLevel(it);
+  return l.videos.map((v, j) => ({ v, sc: -Math.abs((v[4] || 2) - want) * 2 - (S.vseen[v[0]] ? 4 : 0) + (S.vr[v[0]] || 0) * 3 - j * 0.01 })).sort((a, b) => b.sc - a.sc).map((x) => x.v);
+}
+function curVideo(l) {
+  const Ls = l.videos, c = S.vs[l.id];
+  let v = typeof c == "number" ? Ls[c] : Ls.find((w) => w[0] == c);
+  if (!v) { v = vidRank(l)[0]; S.vs[l.id] = v[0]; saveLocal() }
+  return v;
+}
+const seenVideo = () => { const l = L(S.cur); if (l) { const v = curVideo(l); if (!S.vseen[v[0]]) { S.vseen[v[0]] = 1; save() } } };
 function rv() {
-  const el = $("#vd"); if (!el) return; const l = L(S.cur), Ls = l.videos, it = (S.road || []).find((x) => x.id == l.id) || {};
-  const i = S.vs[l.id] ?? (it.d == "Deep dive" ? Ls.length - 1 : 0), v = Ls[Math.min(i, Ls.length - 1)];
+  const el = $("#vd"); if (!el) return; const l = L(S.cur), Ls = l.videos, v = curVideo(l), r = S.vr[v[0]] || 0;
   const player = canEmbed() ? `<iframe src="https://www.youtube-nocookie.com/embed/${v[0]}?rel=0&playsinline=1" title="${esc(v[1])}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen" allowfullscreen></iframe>`
     : `<a class=vc href="https://www.youtube.com/watch?v=${v[0]}" target=_blank rel=noopener data-c="vidOut"><span class=pl aria-hidden=true>▶</span><b>${esc(v[1])}</b><small>${esc(v[2])} · Watch on YouTube</small></a>`;
-  el.innerHTML = `<div class=vw>${player}</div><p class=help>${canEmbed() ? `Video not playing? <a href="https://www.youtube.com/watch?v=${v[0]}" target=_blank rel=noopener>Watch it on YouTube</a>` : "Opens in a new tab on YouTube. Come back here for the practice and mentor."}</p><p><b>${esc(v[1])}</b><br><span class=mu>${esc(v[2])} · ${esc(v[3])}</span></p>
-${Ls.length > 1 ? '<p class=mu>Choose a video</p>' + Ls.map((w, j) => `<button class="vrow ${w === v ? "on" : ""}" data-c="vid:${j}"><i aria-hidden=true>▶</i><span><b>${esc(w[1])}</b><br><span class=mu>${esc(w[2])} · ${esc(w[3])}</span></span></button>`).join("") : ""}`
+  const lv = ["", "Intro", "Standard", "Deep dive"];
+  el.innerHTML = `<div class=vw>${player}</div><p class=help>${canEmbed() ? `Video not playing? <a href="https://www.youtube.com/watch?v=${v[0]}" target=_blank rel=noopener>Watch it on YouTube</a>` : "Opens in a new tab on YouTube. Come back here for the practice and mentor."}</p>
+<p><b>${esc(v[1])}</b><br><span class=mu>${esc(v[2])} · ${lv[v[4] || 2]} · ${esc(v[3])}</span></p>
+<div class=vrate><span class=mu>Was this video helpful?</span><button class="vr-b ${r > 0 ? "on" : ""}" data-c="vrate:1" aria-pressed="${r > 0}" aria-label="Helpful">👍</button><button class="vr-b ${r < 0 ? "on" : ""}" data-c="vrate:-1" aria-pressed="${r < 0}" aria-label="Not helpful">👎</button>${Ls.length > 1 ? `<button class="btn g xs" data-c=vidNext>Show me a different video</button>` : ""}</div>
+${Ls.length > 1 ? `<details class=vlist><summary class=mu>All ${Ls.length} videos for this lesson</summary>${Ls.map((w, j) => `<button class="vrow ${w === v ? "on" : ""}" data-c="vid:${j}"><i aria-hidden=true>▶</i><span><b>${esc(w[1])}</b><br><span class=mu>${esc(w[2])} · ${lv[w[4] || 2]}${S.vseen[w[0]] ? " · watched" : ""}</span></span></button>`).join("")}</details>` : ""}`
 }
-A.vid = (j) => { S.vs[S.cur] = j; save(); rv() };
-A.vidOut = (el) => { markStep("video"); window.open(el.href, "_blank", "noopener") };
+A.vid = (j) => { const l = L(S.cur); S.vs[S.cur] = l.videos[j][0]; save(); rv() };
+A.vidNext = () => { const l = L(S.cur), cur = curVideo(l), rk = vidRank(l).filter((w) => w !== cur); S.vs[S.cur] = (rk[0] || cur)[0]; save(); ev("video_next", { id: S.cur }); rv() };
+A.vrate = (n) => {
+  const l = L(S.cur), v = curVideo(l); S.vr[v[0]] = S.vr[v[0]] == n ? 0 : n; if (!S.vr[v[0]]) delete S.vr[v[0]];
+  save(); ev("video_rate", { id: S.cur, video: v[0], rating: S.vr[v[0]] || 0 }); rv();
+  if (S.vr[v[0]] < 0) toast("Thanks. Tap \"Show me a different video\" to try another one."); else if (S.vr[v[0]] > 0) toast("Thanks for rating it 👍");
+};
+A.vidOut = (el) => { markStep("video"); seenVideo(); window.open(el.href, "_blank", "noopener") };
 // Clicking into the embedded player moves focus to the iframe, which blurs the window: count it as watching.
-addEventListener("blur", () => setTimeout(() => { const a = document.activeElement; if (a && a.tagName == "IFRAME" && a.closest("#vd")) { markStep("video"); act("video", { id: S.cur }) } }, 0));
+addEventListener("blur", () => setTimeout(() => { const a = document.activeElement; if (a && a.tagName == "IFRAME" && a.closest("#vd")) { markStep("video"); seenVideo(); act("video", { id: S.cur }) } }, 0));
 document.addEventListener("securitypolicyviolation", (e) => { if (/youtube/.test(e.blockedURI || "") && !embedBlocked) { embedBlocked = true; rv() } });
 
 // ---------------- Practice ----------------
@@ -557,7 +582,9 @@ A.fin = () => {
   completeLesson()
 };
 function completeLesson() {
-  const id = S.cur; if (S.done[id]) { finH(); return } S.done[id] = 1; save(); act("lesson_done", { id });
+  const id = S.cur; if (S.done[id]) { finH(); return } S.done[id] = 1;
+  const lv = L(id); if (lv) { S.vseen[curVideo(lv)[0]] = 1; delete S.vs[id] }   // next visit shows a video they haven't seen
+  save(); act("lesson_done", { id });
   const c = S.conf[id] || {}; toast(c.pre && c.post > c.pre ? `Lesson complete ✅ Confidence up from ${c.pre} to ${c.post}!` : "Lesson complete ✅ Keep going"); finH();
 }
 
@@ -694,7 +721,7 @@ document.addEventListener("click", (e) => { const a = e.target.closest("a[data-t
 V.about = () => {
   const o = CFG.owner || {}, ini = (o.name || "AI").split(" ").map((w) => w[0]).join("").slice(0, 2);
   document.title = "About · AI PM Coach";
-  app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Home</button><span class=eyebrow style="display:table;margin-top:22px">About</span><h1>About AI PM Coach</h1>
+  app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><span class=eyebrow style="display:table;margin-top:22px">About</span><h1>About AI PM Coach</h1>
 ${o.name ? `<div class=card><div class=row style="justify-content:flex-start;gap:16px;flex-wrap:nowrap"><div class=av aria-hidden=true>${esc(ini)}</div><div><p class=mu style="margin:0">Created by</p><b style="font-size:1.25rem">${esc(o.name)}</b><br><span class=mu>${esc(o.role || "")}</span></div></div>${(o.bio || []).map((p) => `<p>${esc(p)}</p>`).join("")}${o.linkedin ? `<p style="margin-bottom:0"><a class="btn g" style="display:inline-block;text-decoration:none;padding:10px 18px" href="${esc(o.linkedin)}" target=_blank rel=noopener>Connect on LinkedIn ↗</a></p>` : ""}</div>` : ""}
 <div class=card><span class=eyebrow>What this app does</span><p>AI PM Coach helps product managers build the skills to work on AI products. A 2-minute assessment of your experience, technical comfort, AI knowledge and goals produces a personal roadmap, sized to the time you have each week.</p><p>Each lesson combines a short video, a written explanation with further reading, practice questions in your industry, and reflection questions with AI feedback. Beyond lessons you'll find a daily challenge, smart review, role-play and interview simulators, a capstone AI PRD and a certificate.</p></div>
 <div class=card><span class=eyebrow>Your data</span><p style="margin:0">Your progress is saved in this browser, and in your account if you sign in with Google. When you use an AI feature, what you type is sent to our server and to Anthropic to generate the reply. Details are in the <button class=lnk data-c="go:privacy">privacy notice</button>.</p></div>
@@ -702,7 +729,7 @@ ${o.name ? `<div class=card><div class=row style="justify-content:flex-start;gap
 };
 V.privacy = () => {
   document.title = "Privacy · AI PM Coach"; const o = CFG.owner || {};
-  app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Home</button><h1 style="margin-top:14px">Privacy notice</h1><p class=mu>Plain-language summary of what happens to your data.</p>
+  app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><h1 style="margin-top:14px">Privacy notice</h1><p class=mu>Plain-language summary of what happens to your data.</p>
 <div class=card><h3>Stored in your browser</h3><p>Your assessment answers, roadmap, progress, reflections, chats, simulator answers and PRD drafts are saved in this browser's local storage. If you don't sign in, we don't have a copy. Clearing your browser data deletes them, and you can also download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
 <div class=card><h3>If you sign in</h3><p>Signing in is optional and uses your <b>Google</b> account through <b>Supabase</b>, our account and database provider. We receive your name and email address from Google. Your progress is then also stored in our Supabase database so you can continue on any device, and we record the days you use the app and how often you sign in, to understand how many people use it. The site owner can see your name, email, sign-up date, last activity and lessons completed. You can delete your account and all its data at any time on the <button class=lnk data-c="go:account">Account</button> page.</p></div>
 <div class=card><h3>Sent when you use AI features</h3><p>When you use the AI Mentor, reflection feedback, new practice questions, the PRD review, role-play or interview scoring, the text you enter, your assessment answers (level, industry and goal), your product description if you added one, and the current lesson are sent to this site's server function (hosted by Netlify) and passed to <b>Anthropic</b>, which provides the Claude AI model, to generate the reply. Don't enter confidential or personal information in these features. The server doesn't store your messages; it checks that you're signed in and keeps a daily request counter per account (an anonymised hash of your account ID) to prevent abuse, and hosting logs may record technical errors.</p></div>
@@ -721,7 +748,7 @@ V.feedback = () => {
   if (F.from === undefined) F = { type: null, rating: 0, lesson: "", from: S.profile ? "home" : "land", sent: false };
   document.title = "Feedback · AI PM Coach";
   if (F.sent) { app.innerHTML = `<span class=eyebrow>Feedback</span><h1>Thank you! 🙏</h1><div class=card><p style="margin-top:0">Your feedback was sent. Every message is read and helps decide what to improve next.</p><div class="row l"><button class=btn data-c="fbback">Back to where I was</button><button class="btn g" data-c="fb">Send more feedback</button></div></div>`; return }
-  app.innerHTML = `<button class="btn g sm" data-c="fbback">&larr; Back</button><span class=eyebrow style="display:table;margin-top:22px">Feedback</span><h1>Help improve AI PM Coach</h1><p class=mu>Tell me what's working, what isn't, and what you'd like to see. It takes about a minute.</p>
+  app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><span class=eyebrow style="display:table;margin-top:22px">Feedback</span><h1>Help improve AI PM Coach</h1><p class=mu>Tell me what's working, what isn't, and what you'd like to see. It takes about a minute.</p>
 <div class=card><label class=fl>What kind of feedback?</label><div class=tiles id=fbt style="margin-top:8px" role=group aria-label="Feedback type">${FT.map((f, i) => tileH(f[0], F.type === i, `fbt:${i}`, f[2], f[3], false)).join("")}</div>
 <label class=fl>How would you rate the app overall? <span class=mu>(optional)</span></label><div class=stars id=fbr role=group aria-label="Rating">${[1, 2, 3, 4, 5].map((n) => `<button type=button class="star ${n <= F.rating ? "on" : ""}" data-c="fbr:${n}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div>
 <label class=fl for=fbl>Is it about a specific lesson? <span class=mu>(optional)</span></label><select id=fbl><option value="">No, the app in general</option>${C.LESSONS.map((l) => `<option value="${l.id}" ${F.lesson == l.id ? "selected" : ""}>${esc(l.title)}</option>`).join("")}</select>
@@ -766,7 +793,7 @@ async function acc(body) {                   // authenticated call with automati
   try { return await accPost(body) }
   catch (e) {
     if (e.code == "session_expired" && await refreshToken()) return accPost(body);
-    if (e.code == "session_expired") { AU = null; saveAuth(); renderNav(); toast("Your session ended. Please sign in again to keep saving your progress.") }
+    if (e.code == "session_expired") endSession("Your session ended. Please sign in again; your progress is saved in your account.");
     throw e;
   }
 }
@@ -796,7 +823,7 @@ async function push(force) {
 // and anything only the other device has (lessons done, answers, reviews, badges...) is added.
 function mergeFrom(remote) {
   if (!remote) return;
-  const maps = ["done", "ach", "open", "steps", "conf", "chat", "pr", "rfb", "rp", "iv", "rev", "daily", "vs"];
+  const maps = ["done", "ach", "open", "steps", "conf", "chat", "pr", "rfb", "rp", "iv", "rev", "daily", "vs", "vseen", "vr"];
   for (const k of maps) { const r = remote[k] || {}, l = S[k] = S[k] || {}; for (const id in r) if (!(id in l)) l[id] = r[id] }
   for (const d in remote.days || {}) S.days[d] = Math.max(S.days[d] || 0, remote.days[d]);
   for (const id in remote.ref || {}) { const r = remote.ref[id], l = S.ref[id]; if (!l) S.ref[id] = r; else if (Array.isArray(r) && Array.isArray(l)) r.forEach((v, i) => { if (v && !(l[i] || "").trim()) l[i] = v }) }
@@ -838,8 +865,22 @@ A.syncNow = async () => { await push(true); await pull(); syncBadge(); toast("Sy
 A.signout = async () => {
   if (S.dirty) await push(true);
   if (!confirm("Sign out? Your progress stays saved in your account, and it will be removed from this browser.")) return;
-  const theme = S.theme, consent = S.consent; AU = null; saveAuth(); S = { theme, consent }; initState(); saveLocal(); ev("signout"); go("land"); toast("Signed out");
+  ev("signout"); endSession("Signed out");
 };
+// Signing out, or a session that can't be renewed, always returns this browser to the visitor page.
+// The account's progress stays in the cloud; changes that hadn't synced yet are kept aside and
+// merged back the next time the same account signs in on this browser.
+function endSession(msg) {
+  const was = S.acct || (AU && AU.email);
+  if (was && S.dirty) { try { localStorage.setItem("aipm_unsynced", JSON.stringify({ acct: was, state: syncable() })) } catch (e) { } }
+  const theme = S.theme, consent = S.consent; AU = null; saveAuth(); S = { theme, consent }; initState(); saveLocal();
+  A.wallClose(); renderNav(); go("land"); if (msg) toast(msg);
+}
+async function mergeUnsynced() {
+  let st = null; try { st = JSON.parse(localStorage.getItem("aipm_unsynced") || "null") } catch (e) { }
+  if (!st || !AU || st.acct != AU.email || S.acct != AU.email) return;
+  mergeFrom(st.state); saveLocal(); await push(true); try { localStorage.removeItem("aipm_unsynced") } catch (e) { } render();
+}
 A.deleteAccount = async () => {
   if (!confirm("Delete your account and all progress saved in it? This can't be undone.")) return;
   try { await acc({ action: "delete" }) } catch (e) { toast("Couldn't delete your account right now. Please try again."); return }
@@ -857,7 +898,7 @@ async function startAccounts() {
   const fresh = takeRedirect();
   if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } renderNav(); if (["home", "account", "road", "practice", "prd"].includes(S.view)) render() }).catch(() => { });
   if (!AU) return;
-  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; A.wallClose(); if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); if (S.view == "admin") V.admin() }
+  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; A.wallClose(); if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); await mergeUnsynced(); if (S.view == "admin") V.admin() }
   catch (e) { if (fresh) toast("Sign-in couldn't be completed. Please try again.") }
 }
 document.addEventListener("visibilitychange", () => { if (!AU) return; if (document.visibilityState == "hidden") { if (S.dirty) push() } else if (Date.now() - lastPull > 60000) pull() });
@@ -885,6 +926,11 @@ function admChart(series) {
     return `<g class=hit><title>${lbl}: ${d.active} active user${d.active == 1 ? "" : "s"}, ${d.logins} sign-in${d.logins == 1 ? "" : "s"}, ${d.signups} new</title><rect x=${pl + i * gw} y=${pt} width=${gw} height=${H - pt - pb} fill=transparent />${bar(x0, d.active, "var(--c1)")}${bar(x0 + bw + 2, d.logins, "var(--c2)")}<text x=${pl + i * gw + gw / 2} y=${H - 8} text-anchor=middle class=ax>${i % 2 == 1 || n <= 7 ? new Date(d.day + "T12:00:00").getDate() : ""}</text></g>` }).join("");
   return `<svg class=chart viewBox="0 0 ${W} ${H}" role=img aria-label="Active users and sign-ins per day for the last ${n} days">${g}<line x1=${pl} x2=${W} y1=${H - pb} y2=${H - pb} stroke="var(--mu)" stroke-width=1 />${bars}</svg>`;
 }
+function admVideos(list) {
+  const info = {}; for (const l of C.LESSONS) for (const v of l.videos) info[v[0]] = { title: v[1], ch: v[2], lesson: l.title };
+  const rows = list.filter((x) => info[x.id]).sort((a, b) => (b.up + b.down) - (a.up + a.down) || b.up - a.up);
+  return `<div class=card><span class=eyebrow>Video ratings</span>${rows.length ? `<div class=tscroll><table class=tbl><tr><th>Video</th><th>Lesson</th><th>👍</th><th>👎</th></tr>${rows.map((x) => `<tr><td><a href="https://www.youtube.com/watch?v=${esc(x.id)}" target=_blank rel=noopener>${esc(info[x.id].title)}</a><br><span class=mu>${esc(info[x.id].ch)}</span></td><td>${esc(info[x.id].lesson)}</td><td>${x.up}</td><td>${x.down}</td></tr>`).join("")}</table></div><p class=help>Videos with many 👎 are good candidates to replace in <code>public/js/content.js</code>.</p>` : `<p class=help>No ratings yet. Learners rate videos with 👍 / 👎 under each lesson video.</p>`}</div>`;
+}
 function admH() {
   const d = ADM, k = d.kpi, el = $("#adm"); if (!el) return;
   const tile = (v, l) => `<div class="card flat"><div class=big>${v}</div><p class=sub>${l}</p></div>`;
@@ -893,6 +939,7 @@ function admH() {
 <div class=card><span class=eyebrow>Last 14 days</span><div class=legend style="justify-content:flex-start;margin:6px 0 4px"><span><i style="background:var(--c1)"></i>Active users</span><span><i style="background:var(--c2)"></i>Sign-ins</span></div>${admChart(d.series)}
 <details><summary class=sub>Show as a table</summary><table class=tbl><tr><th>Day</th><th>Active users</th><th>Sign-ins</th><th>New sign-ups</th></tr>${d.series.slice().reverse().map((r) => `<tr><td>${fmtD(r.day + "T12:00:00")}</td><td>${r.active}</td><td>${r.logins}</td><td>${r.signups}</td></tr>`).join("")}</table></details></div>
 <div class=card><span class=eyebrow>Learners (${d.users.length})</span><div class=tscroll><table class=tbl><tr><th>Learner</th><th>Joined</th><th>Last active</th><th>Active days (30d)</th><th>Lessons</th></tr>${d.users.map((u) => `<tr><td><b>${esc(u.name || "-")}</b><br><span class=sub>${esc(u.email)}</span></td><td>${fmtD(u.joined)}</td><td>${fmtD(u.lastActive || u.lastSignIn)}</td><td>${u.activeDays30}</td><td>${u.lessonsDone}/${u.lessonsTotal || "-"}</td></tr>`).join("") || '<tr><td colspan=5 class=sub>No accounts yet.</td></tr>'}</table></div></div>
+${admVideos(d.videos || [])}
 <p class=help>Guests who never sign in aren't counted here; use PostHog analytics (js/config.js) to include them.</p>`;
 }
 A.admReload = () => { const el = $("#adm"); if (el) el.innerHTML = "<p class=mu>Loading...</p>"; acc({ action: "admin" }).then((d) => { ADM = d; admH() }).catch(() => toast("Couldn't refresh")) };
@@ -918,4 +965,6 @@ initState(); applyTheme();
 if (isAdminURL()) S.view = "admin"; else if (S.view == "admin") S.view = S.profile ? "home" : "land";
 if (!S.view || (S.view == "land" && S.profile && S.road)) S.view = S.profile && S.road ? "home" : "land";
 if (S.view == "quiz" && !S.draft) S.view = S.profile ? "prof" : "land";
+// This browser was used by an account that is no longer signed in here: show the visitor page.
+if (!AU && S.acct && !/access_token=/.test(location.hash)) endSession();
 render(); consentBanner(); loadPostHog(); checkAch(); startAccounts();

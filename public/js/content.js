@@ -573,13 +573,36 @@ window.CONTENT = {
      "LPZh9BOjkQs",
      "Large Language Models explained briefly",
      "3Blue1Brown",
-     "Short, visual intro"
+     "Short, visual intro",
+     1
     ],
     [
      "zjkBMFhNj_g",
      "Intro to Large Language Models",
      "Andrej Karpathy",
-     "1 hr talk, deeper dive"
+     "1 hr talk, deeper dive",
+     3
+    ],
+    [
+     "o3YCjK7bWHI",
+     "What are AI 'hallucinations' and can we fix LLMs so that they don't happen?",
+     "Microsoft Developer",
+     "Short take on why hallucinations happen and how to reduce them",
+     1
+    ],
+    [
+     "zizonToFXDs",
+     "Introduction to large language models",
+     "Google Cloud Tech",
+     "Plain-language LLM basics, use cases and prompt tuning",
+     1
+    ],
+    [
+     "gn6v2q443Ew",
+     "Why LLMs hallucinate | Yann LeCun and Lex Fridman",
+     "Lex Clips",
+     "A leading researcher on why next-token prediction drifts",
+     2
     ]
    ]
   },
@@ -695,13 +718,36 @@ window.CONTENT = {
      "1c9iyoVIwDs",
      "4 Methods of Prompt Engineering",
      "IBM Technology",
-     "Short overview of core techniques"
+     "Short overview of core techniques",
+     1
     ],
     [
      "ysPbXH0LpIE",
      "Prompting 101",
      "Anthropic",
-     "Workshop: building a real prompt step by step"
+     "Workshop: building a real prompt step by step",
+     2
+    ],
+    [
+     "KlMAxfToWJM",
+     "How to Create Effective Prompts Using a Simple Framework | Google Prompting Essentials",
+     "Grow with Google",
+     "A quick framework: task, context, references, iterate",
+     1
+    ],
+    [
+     "2CEgqX15a7s",
+     "AI Expert Answers Prompt Engineering Questions From Twitter | Tech Support | WIRED",
+     "WIRED",
+     "Practical Q&A that busts common prompting myths",
+     1
+    ],
+    [
+     "eKuFqQKYRrA",
+     "AI prompt engineering in 2025: What works and what doesn't | Sander Schulhoff",
+     "Lenny's Podcast",
+     "Evidence-based techniques and product prompting pitfalls",
+     2
     ]
    ]
   },
@@ -811,13 +857,36 @@ window.CONTENT = {
      "y2v1-u6t5eQ",
      "How to pick AI projects",
      "DeepLearning.AI (Andrew Ng)",
-     "Classic framework for choosing AI projects"
+     "Classic framework for choosing AI projects",
+     1
     ],
     [
      "XZBxx6nPEj4",
      "How To Identify AI/ML Use Cases",
      "Gradient Group",
-     "Spotting good use cases in a business"
+     "Spotting good use cases in a business",
+     1
+    ],
+    [
+     "dN1XaHl3sig",
+     "How to Audit Your AI Readiness",
+     "Bernard Marr",
+     "A checklist for data, skills and readiness",
+     1
+    ],
+    [
+     "TANaRNMbYgk",
+     "How To Get AI Startup Ideas",
+     "Y Combinator",
+     "Spotting problems where AI really adds value",
+     2
+    ],
+    [
+     "z7T1pCxgvlA",
+     "Why most AI products fail: Lessons from 50+ AI deployments at OpenAI, Google & Amazon",
+     "Lenny's Podcast",
+     "Practitioners on choosing viable AI use cases",
+     2
     ]
    ]
   },
@@ -927,19 +996,36 @@ window.CONTENT = {
      "5uKFszLtnjI",
      "Calculating the Cost and ROI of Generative AI",
      "Amazon Web Services",
-     "Cost drivers and ROI basics"
+     "Cost drivers and ROI basics",
+     2
     ],
     [
      "xJuJAFQFm5g",
      "How to Identify High-ROI Use Cases for AI",
      "AE Studio",
-     "Prioritising by business value"
+     "Prioritising by business value",
+     2
     ],
     [
      "tjRN9nlU9K8",
      "Token Costs, TCO and ROI Math for Enterprise AI",
      "AnswerRocket",
-     "Deeper dive into the cost maths"
+     "Deeper dive into the cost maths",
+     2
+    ],
+    [
+     "NOybqovsYpk",
+     "How to measure the ROI of AI using Asana's 4-step framework",
+     "Asana",
+     "A simple framework for measuring AI value against cost",
+     1
+    ],
+    [
+     "72aP5ohBxvE",
+     "The Gross Margin Episode with Sarah Wang of a16z",
+     "Run the Numbers with CJ Gustafson",
+     "An investor's view of inference costs and margins",
+     3
     ]
    ]
   },
@@ -1035,13 +1121,29 @@ window.CONTENT = {
      "nPiRIl1cb0k",
      "a16z Podcast: Data Network Effects",
      "a16z",
-     "Podcast on when data really creates network effects and defensibility"
+     "Podcast on when data really creates network effects and defensibility",
+     2
     ],
     [
      "6lTxD_oUjXQ",
      "Effective AI Agents Need Data Flywheels, Not the Biggest LLM",
      "AI Engineer",
-     "NVIDIA talk on building feedback-driven data flywheels in practice"
+     "NVIDIA talk on building feedback-driven data flywheels in practice",
+     3
+    ],
+    [
+     "j0lFzQFwgpY",
+     "The AI Product Flywheel: Systematically Evaluate & Improve AI Products",
+     "Reforge",
+     "Turning usage feedback and evals into improvement",
+     2
+    ],
+    [
+     "tqrZFS_NDXc",
+     "Building a Product Data Moat in the Age of AI",
+     "ProductCamp Austin",
+     "A PM talk on building proprietary data advantages",
+     2
     ]
    ],
    "reads": [
@@ -1164,13 +1266,36 @@ window.CONTENT = {
      "F8NKVhkZZWI",
      "What are AI Agents?",
      "IBM Technology",
-     "Agents explained"
+     "Agents explained",
+     1
     ],
     [
      "sal78ACtGTc",
      "What's next for AI agentic workflows",
      "Sequoia Capital (Andrew Ng)",
-     "Talk on agent design patterns"
+     "Talk on agent design patterns",
+     2
+    ],
+    [
+     "3zgm60bXmQk",
+     "What are AI agents?",
+     "Microsoft Developer",
+     "A plain-language intro to what makes an agent",
+     1
+    ],
+    [
+     "D7_ipDqhtwk",
+     "How We Build Effective Agents: Barry Zhang, Anthropic",
+     "AI Engineer",
+     "When to use workflows versus autonomous agents",
+     2
+    ],
+    [
+     "ASABxNenD_U",
+     "Vertical AI Agents Could Be 10X Bigger Than SaaS",
+     "Y Combinator",
+     "YC partners on agent business models",
+     2
     ]
    ]
   },
@@ -1266,13 +1391,36 @@ window.CONTENT = {
      "n3HsvqBJrlY",
      "Getting Started with the People + AI Guidebook",
      "Google Design",
-     "Short explainer of Google PAIR's human-centred AI design guidance"
+     "Short explainer of Google PAIR's human-centred AI design guidance",
+     1
     ],
     [
      "rf83vRxLWFQ",
      "Designing Human-Centered AI Products (Google I/O '19)",
      "Google Design",
-     "Conference talk, deeper dive into trust, mental models and feedback"
+     "Conference talk, deeper dive into trust, mental models and feedback",
+     2
+    ],
+    [
+     "69EokIgHjmU",
+     "How to Design UX for AI Products. UI Design Best Practices for AI Services: Scoping",
+     "IxDF - Interaction Design Foundation",
+     "Scoping AI features and setting expectations",
+     1
+    ],
+    [
+     "CmEYKsmR2v8",
+     "The UX of AI: Research-Backed Best Practices for Designing AI Interfaces",
+     "Great Question",
+     "Research-based patterns for trustworthy, correctable AI",
+     2
+    ],
+    [
+     "fn_O6WjLgcs",
+     "47. Designing AI Experiences: What to Consider (feat. Caleb Sponheim PhD, NN/g)",
+     "NNgroup",
+     "An NN/g researcher on trust, errors and feedback",
+     2
     ]
    ],
    "reads": [
@@ -1402,13 +1550,36 @@ window.CONTENT = {
      "T-D1OfcDW1M",
      "What is Retrieval-Augmented Generation (RAG)?",
      "IBM Technology",
-     "RAG explained"
+     "RAG explained",
+     1
     ],
     [
      "dN0lsF2cvm4",
      "Vector Databases simply explained",
      "AssemblyAI",
-     "Embeddings and vector search basics"
+     "Embeddings and vector search basics",
+     2
+    ],
+    [
+     "0Mo0tw-K_NQ",
+     "What are vector embeddings and how do they work",
+     "Data Science Dojo",
+     "Embeddings as meaning vectors, the basis of retrieval",
+     1
+    ],
+    [
+     "6l8SicUgc5s",
+     "A Deep Dive into Retrieval Augmented Generation - AI PM Community Session #37",
+     "Product Management Exercises",
+     "A PM community session on RAG trade-offs",
+     2
+    ],
+    [
+     "mE7IDf2SmJg",
+     "Stanford CS25: V3 I Retrieval Augmented Language Models",
+     "Stanford Online",
+     "Lecture by RAG co-creator Douwe Kiela",
+     3
     ]
    ]
   },
@@ -1504,13 +1675,36 @@ window.CONTENT = {
      "zYGDpG-pTho",
      "RAG vs Fine-Tuning vs Prompt Engineering",
      "IBM Technology",
-     "Short explainer comparing the three approaches"
+     "Short explainer comparing the three approaches",
+     1
     ],
     [
      "ahnGLM-RC1Y",
      "A Survey of Techniques for Maximizing LLM Performance",
      "OpenAI",
-     "DevDay talk, deeper dive into when to use prompting, RAG or fine-tuning"
+     "DevDay talk, deeper dive into when to use prompting, RAG or fine-tuning",
+     3
+    ],
+    [
+     "Q-_D_2NWECE",
+     "RAG vs Fine Tuning vs Prompt Engineering",
+     "codebasics",
+     "A short side-by-side of the three approaches",
+     1
+    ],
+    [
+     "T9aRN5JkmL8",
+     "AI prompt engineering: A deep dive",
+     "Anthropic",
+     "Anthropic's team on getting the most from prompting first",
+     2
+    ],
+    [
+     "h1c_jmk97Ss",
+     "Why Fine Tuning is Dead w/Emmanuel Ameisen",
+     "Hamel Husain",
+     "When fine-tuning still beats prompting and RAG",
+     3
     ]
    ],
    "reads": [
@@ -1640,13 +1834,36 @@ window.CONTENT = {
      "dC8e2hHXmgM",
      "How to: AI Evals",
      "LiftoffPM",
-     "Evals from a PM's point of view"
+     "Evals from a PM's point of view",
+     1
     ],
     [
      "BsWxPI9UM4c",
      "Why AI evals are the hottest new skill for product builders",
      "Lenny's Podcast",
-     "In-depth conversation with Hamel Husain & Shreya Shankar"
+     "In-depth conversation with Hamel Husain & Shreya Shankar",
+     2
+    ],
+    [
+     "GL0XhAj5LPE",
+     "LLM Evals: Common Mistakes",
+     "Hamel Husain",
+     "A leading practitioner on common eval pitfalls",
+     2
+    ],
+    [
+     "PgzOBNse2EA",
+     "Evals, error analysis, and better prompts: A systematic approach to improving your AI products",
+     "How I AI",
+     "A step-by-step error analysis workflow",
+     2
+    ],
+    [
+     "uiza7wp1KrE",
+     "AI Evaluations Clearly Explained in 50 Minutes (Real Example) | Hamel Husain",
+     "Peter Yang",
+     "A PM-friendly walkthrough of evals on a real product",
+     2
     ]
    ]
   },
@@ -1742,13 +1959,36 @@ window.CONTENT = {
      "nB_EjxoP-6w",
      "5 Principles of Trustworthy AI Models",
      "IBM Technology",
-     "Short explainer: fairness, explainability, robustness, transparency, privacy"
+     "Short explainer: fairness, explainability, robustness, transparency, privacy",
+     1
     ],
     [
      "zFRn_RMSPI4",
      "How Microsoft Approaches AI Red Teaming",
      "Microsoft Developer",
-     "Microsoft Build session, deeper dive into red-teaming practice"
+     "Microsoft Build session, deeper dive into red-teaming practice",
+     2
+    ],
+    [
+     "P2krunLNGHo",
+     "Europe's AI act: first regulation of artificial intelligence",
+     "European Parliament",
+     "Official short overview of the AI Act's risk tiers",
+     1
+    ],
+    [
+     "nTlR-2q1lOE",
+     "AWS re:Invent 2024 - Responsible AI with Amazon Bedrock Guardrails (IDE205)",
+     "AWS Events",
+     "How guardrails are configured and applied",
+     2
+    ],
+    [
+     "rOp2YdRhGKM",
+     "The AI PMs Guide to Building Guardrails for Responsible AI",
+     "How to Product",
+     "A PM take on designing responsible guardrails",
+     2
     ]
    ],
    "reads": [
@@ -1858,13 +2098,36 @@ window.CONTENT = {
      "cvPEiPt7HXo",
      "Large Language Model Operations (LLMOps) Explained",
      "IBM Technology",
-     "Short explainer of the LLMOps lifecycle"
+     "Short explainer of the LLMOps lifecycle",
+     1
     ],
     [
      "JsCCrBF7F1g",
      "LLM Observability, Evaluation, Experimentation Platform",
      "AI Engineer",
-     "Arize talk, deeper dive into tracing, evals and monitoring in production"
+     "Arize talk, deeper dive into tracing, evals and monitoring in production",
+     3
+    ],
+    [
+     "uA4pBu8leyU",
+     "Datadog LLM Observability: Monitor and secure your AI workloads",
+     "Datadog",
+     "A quick look at tracing, cost and quality monitoring",
+     1
+    ],
+    [
+     "Req2PndZ7HM",
+     "From prototype to production: Hard-won lessons for advanced, reliable, and secure agents",
+     "Google Cloud Events",
+     "Lessons taking AI agents from pilot to production",
+     3
+    ],
+    [
+     "mpJG3Dc6Fn4",
+     "[Lightning Pod] Evals: How to Improve AI Consistently — with Hamel Husain and Shreya Shankar",
+     "Latent Space",
+     "Error analysis for improving AI quality after launch",
+     2
     ]
    ],
    "reads": [
@@ -1988,13 +2251,36 @@ window.CONTENT = {
      "bxBzsSsqQAM",
      "The 7 Most Powerful Moats For AI Startups",
      "Y Combinator",
-     "Where durable advantage comes from"
+     "Where durable advantage comes from",
+     2
     ],
     [
      "j339vwgF-i4",
      "Build vs Buy When It Comes To AI",
      "Data Science Dojo",
-     "Weighing build vs buy"
+     "Weighing build vs buy",
+     2
+    ],
+    [
+     "fgzr3PhzIMk",
+     "Why AI Moats Still Matter (And How They've Changed)",
+     "a16z",
+     "How data and distribution moats work for AI",
+     2
+    ],
+    [
+     "jcl0P3WmI4o",
+     "Product Metrics: Beyond Model Accuracy | Amazon Technical Product Leader",
+     "Product School",
+     "Measuring AI products with business metrics",
+     2
+    ],
+    [
+     "R-Geamq9xc0",
+     "What AI means for your product strategy | Paul Adams (CPO of Intercom)",
+     "Lenny's Podcast",
+     "Intercom's CPO on reshaping strategy around AI",
+     2
     ]
    ]
   },
@@ -2090,13 +2376,36 @@ window.CONTENT = {
      "4hjiRmgmHiU",
      "How To Price For B2B | Startup School",
      "Y Combinator",
-     "Shorter pricing basics talk (not AI-specific); value-based B2B pricing"
+     "Shorter pricing basics talk (not AI-specific); value-based B2B pricing",
+     2
     ],
     [
      "NR85H55eYkM",
      "Pricing your AI product: Lessons from 400+ companies",
      "Lenny's Podcast",
-     "Long interview with Madhavan Ramanujam on AI pricing models"
+     "Long interview with Madhavan Ramanujam on AI pricing models",
+     2
+    ],
+    [
+     "4ZR_ZEdBzn8",
+     "The Future of AI Pricing: Outcomes-Based Models Explained",
+     "Eye on Tech",
+     "A short explainer of outcome-based pricing",
+     1
+    ],
+    [
+     "-ImCWtpLh0A",
+     "Intercom's pricing lead on Fin's radical AI monetization model, PMs as GMs, more | Aisling O'Reilly",
+     "Chargebee",
+     "Case study: Fin's per-resolution pricing",
+     2
+    ],
+    [
+     "nz2Q6_u8Zgg",
+     "How AI is Forcing Startups to Rethink Pricing with Madhavan Ramanujam | Ep. 5 The NFX Podcast",
+     "NFX",
+     "A pricing expert on value- and outcome-based models",
+     3
     ]
    ],
    "reads": [
@@ -2220,19 +2529,36 @@ window.CONTENT = {
      "6DKYH9SLSow",
      "How to Prepare for an AI Product Manager Interview",
      "Product Career HQ",
-     "Mock interview with tips"
+     "Mock interview with tips",
+     1
     ],
     [
      "LZyGhS7Lrow",
      "LLM System Design and AI Evals - PM Mock Interview",
      "LiftoffPM",
-     "Technical AI PM interview practice"
+     "Technical AI PM interview practice",
+     2
     ],
     [
      "fa8TsBuoWqc",
      "Mock Interview & Feedback: AI Product Manager",
      "Albert's List",
-     "Full mock with feedback"
+     "Full mock with feedback",
+     2
+    ],
+    [
+     "2DoAXRBKbUI",
+     "How to Manage AI Risks | Product Manager Mock Interview",
+     "Exponent",
+     "A mock interview on an AI risk question",
+     2
+    ],
+    [
+     "vPQCsAxWJ70",
+     "The AI PM Behavioral Interview Masterclass (Mock w/ Real Answers)",
+     "Aakash Gupta",
+     "A mock AI PM behavioural interview with sample answers",
+     2
     ]
    ]
   }
