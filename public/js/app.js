@@ -5,14 +5,39 @@
 "use strict";
 const CFG = Object.assign({ siteUrl: location.origin, posthogKey: "", posthogHost: "https://eu.i.posthog.com", owner: { name: "", role: "", linkedin: "", bio: [] } }, window.APP_CONFIG || {});
 const C = window.CONTENT;
-const Q = C.Q;
+const QK = (k) => C.Q.find((q) => q[0] == k);
+// The assessment asks only what changes the roadmap. Industry is optional and set on Home ("Your product").
+const Q = ["exp", "tech", "ai", "goal", "time"].map(QK);
 const LV = ["Beginner", "Basic", "Intermediate", "Advanced"], AIL = ["Beginner", "Beginner+", "Practitioner", "Experienced", "Leader"];
 const app = document.getElementById("app"), navEl = document.getElementById("nav");
 
 // ---------------- Storage ----------------
+// When accounts are switched on, visitors who aren't signed in are guests: their progress lives
+// only for this visit (sessionStorage), so every new visit starts at the visitor page. Only the
+// theme and analytics choice are remembered for them. Signed-in learners use localStorage + the cloud.
 let S = load();
-function load() { try { return JSON.parse(localStorage.getItem("aipm") || "{}") || {} } catch (e) { return {} } }
-function saveLocal() { try { localStorage.setItem("aipm", JSON.stringify(S)) } catch (e) { } }
+function guestMode() { try { return !localStorage.getItem("aipm_auth") && (JSON.parse(sessionStorage.getItem("aipm_acc") || "null") || {}).on === true } catch (e) { return false } }
+function prefs() { try { return JSON.parse(localStorage.getItem("aipm_prefs") || "{}") || {} } catch (e) { return {} } }
+function load() {
+  try {
+    if (guestMode()) { const g = JSON.parse(sessionStorage.getItem("aipm_g") || "null") || {}, p = prefs(); if (g.theme == null && p.theme) g.theme = p.theme; if (g.consent == null && p.consent) g.consent = p.consent; return g }
+    return JSON.parse(localStorage.getItem("aipm") || "null") || prefs();
+  } catch (e) { return {} }
+}
+function saveLocal() {
+  try {
+    if (guestMode()) { sessionStorage.setItem("aipm_g", JSON.stringify(S)); localStorage.setItem("aipm_prefs", JSON.stringify({ theme: S.theme, consent: S.consent })) }
+    else localStorage.setItem("aipm", JSON.stringify(S));
+  } catch (e) { }
+}
+// Progress a guest saved in this browser before guests became visit-only: kept aside and offered to their account when they sign in.
+function stashOldGuest() {
+  try {
+    const raw = localStorage.getItem("aipm"); if (!raw) return false; const o = JSON.parse(raw) || {};
+    if (o.profile && !o.acct) localStorage.setItem("aipm_old", raw);
+    localStorage.setItem("aipm_prefs", JSON.stringify({ theme: o.theme, consent: o.consent })); localStorage.removeItem("aipm"); return true;
+  } catch (e) { return false }
+}
 function save() { S.updatedAt = Date.now(); S.dirty = (S.dirty || 0) + 1; saveLocal(); if (typeof schedulePush == "function") schedulePush() }
 function initState() {
   for (const k of ["done", "chat", "pr", "ref", "rfb", "vs", "vseen", "vr", "open", "days", "rev", "daily", "conf", "ach", "rp", "iv", "steps"]) if (!S[k] || typeof S[k] != "object") S[k] = {};
@@ -37,12 +62,29 @@ function addDays(key, n) { const [y, m, d] = key.split("-").map(Number); return 
 function daysBetween(a, b) { const p = (k) => { const [y, m, d] = k.split("-").map(Number); return Date.UTC(y, m - 1, d) }; return Math.round((p(b) - p(a)) / 864e5) }
 function hash(s) { let h = 2166136261; for (const ch of String(s)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619) } return h >>> 0 }
 const L = (id) => C.LESSONS.find((l) => l.id == id);
-const IND = () => Q[6][2][S.profile ? S.profile.ind : 8];
+const hasInd = () => !!(S.profile && S.profile.ind != null && S.profile.ind !== 9);
+const IND = () => (hasInd() ? QK("ind")[2][S.profile.ind] : "your industry");
 const X = () => C.EX[IND()] || "your company";
 const fillX = (s) => String(s).replace(/\{x\}/g, X()).replace(/\{ind\}/g, IND());
-function info(lessonId) { const p = S.profile || {}; return { exp: p.exp, ind: p.ind, tech: p.tech, ai: p.ai, goal: p.goal, lesson: lessonId || null, done: Object.keys(S.done), product: S.product || "" } }
+function info(lessonId) { const p = S.profile || {}; return { page: S.view, exp: p.exp, ind: p.ind ?? 9, tech: p.tech, ai: p.ai, goal: p.goal, lesson: lessonId || null, done: Object.keys(S.done), product: S.product || "" } }
 function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]] } return a }
 function ring(val, max, label, size = 86) { const r = size / 2 - 7, c = 2 * Math.PI * r, p = Math.max(0, Math.min(1, max ? val / max : 0)); return `<div class=ring style="width:${size}px;height:${size}px"><svg width=${size} height=${size} aria-hidden=true><circle cx=${size / 2} cy=${size / 2} r=${r} fill=none stroke="var(--soft)" stroke-width=8 /><circle cx=${size / 2} cy=${size / 2} r=${r} fill=none stroke="url(#rg)" stroke-width=8 stroke-linecap=round stroke-dasharray="${c * p} ${c}"/><defs><linearGradient id=rg><stop offset=0 stop-color="var(--ac)"/><stop offset=1 stop-color="var(--ac2)"/></linearGradient></defs></svg><div class=v>${label}</div></div>` }
+// The coach's mark: a small compass (the tour guide). Icons are inline SVG so they follow the theme colours.
+const svg = (d, w = 20) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const COMPASS = '<circle cx="12" cy="12" r="9"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor" fill-opacity=".25"/>';
+const mark = (lg) => `<span class="cm ${lg ? "lg" : ""}" aria-hidden="true">${svg(COMPASS, lg ? 24 : 18)}</span>`;
+const ICO = {
+  home: '<path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/>',
+  road: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  practice: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  prd: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>',
+  progress: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  send: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+};
 const CHK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="ok" d="M5 12.5l4.5 4.5L19 7.5"/><path class="no" d="M7 7l10 10M17 7L7 17"/></svg>';
 // One option tile. A label like "Beginner - I prefer..." becomes a bold title with a hint.
 function tileH(o, on, dc, ic, hint, multi, extra) {
@@ -82,7 +124,7 @@ const ACH = [
   ["streak7", "⚡", "Unstoppable", "Learn 7 days in a row", () => (S.best || 0) >= 7],
   ["daily5", "📅", "Daily habit", "Answer 5 daily challenges", () => Object.values(S.daily).filter((d) => d.done).length >= 5],
   ["review10", "🧠", "Sharp memory", "Get 10 review cards right", () => (S.revOk || 0) >= 10],
-  ["mentor10", "💬", "Curious mind", "Send 10 messages to the AI Mentor", () => evCount("mentor") >= 10],
+  ["mentor10", "💬", "Curious mind", "Send 10 messages to your coach", () => evCount("mentor") >= 10],
   ["rp8", "🎭", "Persuader", "Score 8+ in a role-play", () => Object.values(S.rp).some((r) => (r.best || 0) >= 8)],
   ["iv8", "🎤", "Interview ready", "Score 8+ on an interview question", () => Object.values(S.iv).some((r) => (r.best || 0) >= 8)],
   ["prd", "📝", "PRD author", "Draft every section of the capstone PRD", () => prdCount() == C.PRD.length],
@@ -156,20 +198,19 @@ const A = {};                                // click actions, called via data-c
 const IN = {};                               // input handlers, called via data-in="name:arg"
 // ---------------- Sign-in wall: guests get the assessment, roadmap and first lesson; AI needs an account ----------------
 const guest = () => ACC.on && !AU;
-const freeId = () => (S.road && S.road[0] ? S.road[0].id : null);
-const locked = (id) => guest() && id != freeId();
+const locked = () => guest();             // guests can take the assessment and see their plan; lessons need an account
 function wall(kind) {
   if (document.getElementById("wall")) return;
   const t = kind == "lesson"
-    ? ["🔓", "Sign in to unlock your full roadmap", "Your first lesson is free. Sign in with Google to unlock every lesson in your roadmap, plus your AI coach."]
-    : ["✨", "Sign in to use your AI coach", "The AI Mentor, reflection feedback, fresh practice questions, the simulators and the PRD review are for signed-in learners."];
+    ? ["", "Sign in to start learning", "Your plan is ready. Sign in with Google to save it and start your lessons, with your AI coach alongside."]
+    : ["", "Sign in to use your AI coach", "Your coach, reflection feedback, fresh practice questions, the simulators and the PRD review are for signed-in learners."];
   const d = document.createElement("div"); d.id = "wall"; d.className = "wall"; d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "wallH");
-  d.innerHTML = `<div class="card wall-c"><div class=wall-i aria-hidden=true>${t[0]}</div><h2 id=wallH>${t[1]}</h2><p class=help>${t[2]} It's free, takes a few seconds, and keeps the progress you've made so far.</p><button class=btn data-c=signin>Continue with Google</button><button class=lnk data-c=wallClose>Not now</button></div>`;
+  d.innerHTML = `<div class="card wall-c">${mark(true)}<h2 id=wallH>${t[1]}</h2><p class=help>${t[2]} It's free and takes a few seconds. Without an account, your plan is kept only until you close this page.</p><button class=btn data-c=signin>Continue with Google</button><button class=lnk data-c=wallClose>Not now</button></div>`;
   d.addEventListener("click", (e) => { if (e.target === d) A.wallClose() });
   document.body.append(d); ev("wall_shown", { kind }); const b = d.querySelector(".btn"); if (b) b.focus();
 }
 A.wallClose = () => { const w = document.getElementById("wall"); if (w) w.remove() };
-document.addEventListener("keydown", (e) => { if (e.key == "Escape") A.wallClose() });
+document.addEventListener("keydown", (e) => { if (e.key != "Escape") return; if (document.getElementById("wall")) A.wallClose(); else if (document.querySelector(".done-moment")) A.doneClose(); else if (document.querySelector(".guide")) endTour(); else if (CO) A.coachClose() });
 const needAcc = (kind = "ai") => { if (!guest()) return false; wall(kind); return true };
 const lockTxt = (t) => (guest() ? "🔒 " : "") + t;
 let V = {};                                  // views
@@ -178,16 +219,16 @@ A.go = go;
 function render() {
   const view = V[S.view] ? S.view : (S.profile ? "home" : "land");
   if ((view == "home" || view == "road" || view == "lesson" || view == "progress" || view == "review") && !S.profile) { S.view = "land"; return render() }
-  S.view = view; renderNav(); V[view]();
+  S.view = view; document.body.dataset.view = view; renderNav(); clearTour(); V[view](); coachSync();
   try { if (PH) PH.capture("$pageview", { view }) } catch (e) { }
 }
 function renderNav() {
-  const tabs = S.profile ? [["home", "Home", "🏠"], ["road", "Roadmap", "🗺️"], ["practice", "Practice", "🎭"], ["prd", "Capstone", "📝"], ["progress", "Progress", "📈"]] : [];
+  const tabs = S.profile ? [["home", "Today"], ["road", "Plan"], ["practice", "Practice"], ["prd", "Capstone"], ["progress", "Progress"]] : [];
   document.body.classList.toggle("has-tabs", !!S.profile);
-  const due = dueCards().length, act = { lesson: "road", rp: "practice", iv: "practice", review: "home", cert: "progress", quiz: "", prof: "", account: "" }[S.view] ?? S.view;
-  navEl.innerHTML = `<div class=nav-in><button class=brand data-c="go:${S.profile ? "home" : "land"}" aria-label="AI PM Coach home"><img src="/favicon.svg" alt=""><span>AI PM Coach</span></button>
-<nav class=nav-links aria-label="Main">${tabs.map(([v, t, ic]) => `<button data-c="go:${v}" class="${act == v ? "on" : ""}" ${act == v ? 'aria-current="page"' : ""}><span class=ti aria-hidden=true>${ic}</span>${t}${v == "home" && due ? `<span class=ct aria-label="${due} review cards due">${due}</span>` : ""}</button>`).join("")}</nav>
-<span class=nav-r>${AU ? `<button class=theme-btn data-c="go:account" aria-label="Your account" title="${esc(AU.email || "")}">👤 <span class=acct-l>${esc((AU.name || AU.email || "Account").split(/[ @]/)[0])}</span></button>` : ACC.on ? `<button class="theme-btn" data-c="go:account">Sign in</button>` : ""}<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${(S.theme || "dark") == "dark" ? "☀️" : "🌙"}</button></span></div>`
+  const due = dueCards().length, act = { lesson: "road", rp: "practice", iv: "practice", review: "home", quiz: "", prof: "", account: "" }[S.view] ?? S.view;
+  navEl.innerHTML = `<div class=nav-in><button class=brand data-c="go:${S.profile ? "home" : "land"}" aria-label="AI PM Coach home"><span class=logo-m aria-hidden=true>${svg('<path d="M5 12l4 4 10-10"/>', 14)}</span><span>AI PM Coach</span></button>
+<nav class=nav-links aria-label="Main">${tabs.map(([v, t]) => `<button data-c="go:${v}" class="${act == v ? "on" : ""}" ${act == v ? 'aria-current="page"' : ""}><span class=ti>${svg(ICO[v], 22)}</span>${t}${v == "home" && due ? `<span class=ct aria-label="${due} review cards due">${due}</span>` : ""}</button>`).join("")}</nav>
+<span class=nav-r>${AU ? `<button class=theme-btn data-c="go:account" aria-label="Your account" title="${esc(AU.email || "")}">${svg(ICO.user, 18)}<span class=acct-l>${esc((AU.name || AU.email || "Account").split(/[ @]/)[0])}</span></button>` : ACC.on ? `<button class="theme-btn" data-c="go:account">Sign in</button>` : ""}<button class=theme-btn data-c="theme" aria-label="Switch colour theme">${svg((S.theme || "dark") == "dark" ? ICO.sun : ICO.moon, 18)}</button></span></div>`
 }
 function applyTheme() { document.documentElement.setAttribute("data-theme", S.theme || "dark") }   // dark unless the learner chose light
 A.theme = () => { S.theme = (S.theme || "dark") == "dark" ? "light" : "dark"; save(); applyTheme(); renderNav() };
@@ -215,18 +256,18 @@ document.addEventListener("keydown", (e) => {
 // ================= Landing =================
 V.land = () => {
   if (!S.ev.length) ev("visit");
-  document.title = "AI PM Coach - become an AI Product Manager";
-  const resume = S.draft && !S.profile;
-  app.innerHTML = `<section class=hero><span class=eyebrow>AI PM Coach</span><h1>Become an <span class=gr>AI Product Manager</span></h1>
-<p class=mu style="font-size:1.08rem">A personalised learning path for product managers: short lessons, practice with AI feedback, role-play and interview simulators, and a capstone AI PRD you can show employers.</p>
-<div class="row l" style="margin-top:14px">${S.profile ? `<button class=btn data-c="go:home">Go to my dashboard →</button>` : `<button class=btn data-c="startQuiz">${resume ? `Resume my assessment (question ${S.draft.qi + 1} of ${Q.length})` : "Generate My AI PM Roadmap"}</button>`}</div>
-<p class=mu>Free · Takes about 2 minutes · No sign-up</p>
-<div class=who><span class=tag>PMs adding AI skills</span><span class=tag>PMs moving into AI roles</span><span class=tag>Job-seekers</span><span class=tag>Product leaders</span></div></section>
-<div class=steps>${[["🧭", "1. Discover", "A 2-minute assessment of your experience and goals."], ["🗺️", "2. Get your roadmap", "Lessons sized to the time you have each week."], ["🎯", "3. Practise", "Quizzes, reflections and simulators with AI feedback."], ["🚀", "4. Prove it", "A capstone AI PRD and a certificate for LinkedIn."]].map((a) => `<div class=step><div class=ic aria-hidden=true>${a[0]}</div><b>${a[1]}</b><br><span class=mu>${a[2]}</span></div>`).join("")}</div>
-<div class=preview><b>Example roadmap</b> <span class=mu>· a 4-7 year PM in fintech, 3-5 hours a week</span><ol>${[1, 2, 3, 4, 5, 6].map((s) => `<li><b>${C.STAGES[s]}</b> <span class=mu>· ${C.LESSONS.filter((l) => l.stage == s).map((l) => l.title).join(", ")}</span></li>`).join("")}</ol></div>
-<h2 style="margin-top:26px">More than videos</h2>
-<div class=feat>${[["🎭", "Role-play simulator", "Pitch a sceptical CFO or handle an AI incident, then get scored."], ["🎤", "Interview simulator", "Timed AI PM interview questions with a hiring-manager score."], ["💬", "AI Mentor", "Explain concepts in your own words and get coached."], ["📝", "Capstone PRD", "Write an AI PRD section by section with expert review."], ["🧠", "Smart review", "Missed questions come back until you've mastered them."], ["🎓", "Certificate", "Finish your roadmap and add it to your LinkedIn profile."]].map((f) => `<div><span aria-hidden=true style="font-size:1.4rem">${f[0]}</span><b>${f[1]}</b><span>${f[2]}</span></div>`).join("")}</div>
-<p style="text-align:center;margin-top:22px">${S.profile ? "" : `<button class=btn data-c="startQuiz">Start now - it's free</button>`}</p>`
+  document.title = "AI PM Coach - learn to build AI products";
+  const resume = S.draft && !S.profile, o = CFG.owner || {};
+  const cta = S.profile ? `<button class=btn data-c="go:home">Go to today's plan</button>` : `<button class=btn data-c="startQuiz">${resume ? `Resume my answers (question ${S.draft.qi + 1} of ${Q.length})` : "Build my plan"}</button>`;
+  const ex = [1, 2, 3, 4, 5, 6].map((st) => `<li><b>${C.STAGES[st]}</b><span>${C.LESSONS.filter((l) => l.stage == st).map((l) => esc(l.title)).join(" · ")}</span></li>`).join("");
+  app.innerHTML = `<section class=a-hero><p class=kicker>AI PM Coach</p><h1>Learn to build AI products, one short lesson at a time.</h1>
+<p class="soft lead">A personal plan for product managers. Short lessons with a video, a clear explanation and practice in your industry, and a coach on every page to answer your questions.</p>
+<div class="row l" style="margin-top:22px">${cta}<span class=mu>5 questions · about a minute · free</span></div></section>
+<div class=a-cols><section class=a-main><h2 class=sec-h>An example plan</h2><p class="mu" style="margin-top:0">For a PM with a few years' experience and 3 to 5 hours a week. Yours is shaped by your answers.</p><ol class=plan-ex>${ex}</ol></section>
+<aside class=a-side><h2 class=sec-h>How it works</h2><ol class=how><li><b>First</b><span>Answer 5 questions about your experience, goal and time.</span></li><li><b>Then</b><span>Follow your plan: about 20 minutes a lesson, or one question on busy days.</span></li><li><b>Finally</b><span>Practise real conversations and write an AI PRD you can show employers.</span></li></ol>
+<h2 class=sec-h style="margin-top:28px">Along the way</h2><ul class=plain><li>A coach in the corner of every page</li><li>Role-play and interview simulators, scored</li><li>Questions you miss come back until they stick</li></ul></aside></div>
+${o.name ? `<p class="mu owner">Made by ${esc(o.name)}${o.role ? ", " + esc(o.role) : ""}. <button class=lnk data-c="go:about">About the app</button></p>` : ""}
+${S.profile ? "" : `<p class=a-end><button class=btn data-c="startQuiz">Build my plan</button></p>`}`
 };
 
 // ================= Assessment =================
@@ -237,7 +278,7 @@ V.quiz = () => {
   if (!QZ) QZ = S.draft || { qi: 0, ans: {} };
   const q = Q[QZ.qi], m = q[3], cur = QZ.ans.hasOwnProperty(q[0]) ? QZ.ans[q[0]] : (m ? [] : null);
   document.title = "Assessment · AI PM Coach";
-  const nudge = ["Let's go! 🚀", "Nice start 👍", "You're rolling", "Great answers", "Halfway there! 🎉", "Looking good", "Almost there", "Just a few more", "Two to go", "Last one! 🏁"][QZ.qi];
+  const nudge = ["About 30 seconds", "", "", "Nearly done", "Last one"][QZ.qi] || "";
   app.innerHTML = `<div class=bar role=progressbar aria-valuemin=0 aria-valuemax=${Q.length} aria-valuenow=${QZ.qi}><i style="width:${QZ.qi / Q.length * 100}%"></i></div>
 <p class=mu>${QZ.edit ? "Editing your answers · " : ""}Question ${QZ.qi + 1} of ${Q.length} <span class=nudge>${nudge}</span>${m ? " · select all that apply" : ""}</p><h2>${q[1]}</h2>
 ${q[4] ? `<p class=help>${q[4]}</p>` : ""}
@@ -261,7 +302,7 @@ A.qnext = () => {
   if (QZ.qi < Q.length - 1) { QZ.qi++; if (!QZ.edit) { S.draft = QZ; save() } V.quiz(); window.scrollTo(0, 0); return }
   const editing = QZ.edit && S.profile;
   S.profile = QZ.ans; delete S.draft; QZ = null;
-  if (editing) { S.road = buildRoad(S.profile); S.w = [.75, 2, 4, 7, 12][S.profile.time]; save(); ev("profile_edit"); go("road"); toast("Roadmap updated. Your progress is kept ✅") }
+  if (editing) { S.road = buildRoad(S.profile); S.w = [.75, 2, 4, 7, 12][S.profile.time]; save(); ev("profile_edit"); go("road"); toast("Plan updated. Your progress is kept") }
   else { ev("assess_done"); go("prof") }
 };
 
@@ -311,48 +352,109 @@ V.prof = () => {
   const p = S.profile, first = !S.road;
   document.title = "Your profile · AI PM Coach";
   app.innerHTML = `<span class=eyebrow>Your profile</span><h1>Your AI PM profile</h1>
-<div class=card><b style="font-size:1.15rem">${Q[0][2][p.exp]} PM · ${IND()}</b><p>AI experience: <b>${AIL[p.ai]}</b><br>Technical confidence: <b>${LV[p.tech]}</b><br>Goal: <b>${Q[7][2][p.goal]}</b><br>Pace: <b>${Q[8][2][p.time]} a week</b></p>
+<div class=card><b style="font-size:1.15rem">${QK("exp")[2][p.exp]} PM${hasInd() ? " · " + esc(IND()) : ""}</b><p>AI experience: <b>${AIL[p.ai]}</b><br>Technical confidence: <b>${LV[p.tech]}</b><br>Goal: <b>${QK("goal")[2][p.goal]}</b><br>Pace: <b>${QK("time")[2][p.time]} a week</b></p>
 <p class=mu style="margin-bottom:4px">Strengths from your answers</p>${strengths(p).map((t) => `<span class=tag>${t}</span>`).join("")}
 <p class=mu style="margin:14px 0 4px">Biggest growth areas</p>${devAreas().map((t) => `<span class=tag>${t}</span>`).join("")}
 <p style="margin:14px 0 0"><button class=lnk data-c="editProfile">Edit my answers</button></p></div>
 <div class=card><span class=eyebrow>Skill radar</span>${radar()}<p class=help>Estimated from your answers. It grows as you complete lessons.</p></div>
 ${productCard()}
-<button class=btn data-c="${first ? "makeRoad" : "go:road"}">${first ? "Generate my roadmap →" : "Back to my roadmap →"}</button>`
+<button class=btn data-c="${first ? "makeRoad" : "go:road"}">${first ? "See my plan" : "Back to my plan"}</button>`
 };
 function productCard() {
   return `<div class=card><span class=eyebrow>My product (optional)</span><p class=help>Describe the product you work on in one or two sentences. The AI Mentor, reflections, simulators and new questions will use it in their examples. Don't include confidential details.</p>
-<textarea rows=3 maxlength=300 data-in="product" placeholder="e.g. A B2B invoicing app for small businesses in the Nordics, used by 5,000 accountants.">${esc(S.product || "")}</textarea><p class=sub id=prodSaved>${S.product ? "Saved on this device." : ""}</p></div>`
+<textarea rows=3 maxlength=300 data-in="product" placeholder="e.g. A B2B invoicing app for small businesses in the Nordics, used by 5,000 accountants.">${esc(S.product || "")}</textarea>
+<label class=fl for=indSel style="margin-top:10px">Industry <span class=mu>(optional, used for examples)</span></label><select id=indSel data-in="ind"><option value="">Not set</option>${QK("ind")[2].slice(0, 9).map((t, i) => `<option value="${i}" ${S.profile && S.profile.ind === i ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>
+<p class=sub id=prodSaved>${S.product ? "Saved." : ""}</p></div>`
 }
+IN.ind = (el) => { if (!S.profile) return; if (el.value === "") delete S.profile.ind; else S.profile.ind = +el.value; save(); const s = $("#prodSaved"); if (s) s.textContent = "Saved."; ev("industry_set") };
 IN.product = (el) => { S.product = el.value.slice(0, 300); save(); const s = $("#prodSaved"); if (s) s.textContent = "Saved on this device."; clearTimeout(IN._pt); IN._pt = setTimeout(() => ev("product_set"), 1500) };
-A.makeRoad = () => { S.road = buildRoad(S.profile); S.w = [.75, 2, 4, 7, 12][S.profile.time]; ev("roadmap"); go("home"); toast("Your roadmap is ready 🗺️") };
+A.makeRoad = () => { S.road = buildRoad(S.profile); S.w = [.75, 2, 4, 7, 12][S.profile.time]; ev("roadmap"); go("home"); toast("Your plan is ready") };
 
 // ================= Home dashboard =================
 function nextLesson() { const r = S.road || []; if (S.cur && r.some((x) => x.id == S.cur) && !S.done[S.cur] && S.open[S.cur]) return S.cur; const n = r.find((x) => !S.done[x.id]); return n ? n.id : null }
 V.home = () => {
   if (!S.road) { go("prof"); return }
-  document.title = "Home · AI PM Coach";
-  const nx = nextLesson(), l = nx && L(nx), due = dueCards().length, got = ACH.filter((a) => S.ach[a[0]]);
-  const hr = new Date().getHours(), hi = hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening";
-  app.innerHTML = `<h1 style="font-size:1.9rem">${hi} 👋</h1><p class=mu style="margin-top:0">${roadDone() ? "You've finished your roadmap. Keep your skills sharp with practice and review." : `${nDone()} of ${S.road.length} lessons complete. Here's your plan for today.`}</p>
-${S.newLessons ? `<div class="card flat" style="border-color:var(--ac)"><b>New: 6 lessons were added</b><p class="help">AI UX & trust, data strategy, prompting vs RAG vs fine-tuning, responsible AI, launching & monitoring, and pricing. Your progress is kept.</p><button class="btn sm" data-c="go:road">See my roadmap</button> <button class=lnk data-c="dismissNew">Dismiss</button></div>` : ""}
-${l ? `<div class="card cont"><span class=eyebrow>${S.open[nx] ? "Continue where you left off" : "Next up"}</span><h3>${l.title}</h3><p class=mu style="margin-top:0">${l.min} min · ${C.STAGES[l.stage]}</p><button class=btn data-c="openL:${nx}">${S.open[nx] ? "Continue lesson →" : "Start lesson →"}</button></div>`
-      : `<div class="card cont"><span class=eyebrow>Roadmap complete 🎓</span><h3>Claim your certificate</h3><p class=mu>Add it to your LinkedIn profile and share your progress.</p><button class=btn data-c="go:cert">View certificate →</button></div>`}
-<div class=grid2 id=homeStats>${homeStats()}</div>
-<div class=card id=daily>${dailyH()}</div>
-<div class=grid2>
- <div class=card><span class=eyebrow>Smart review</span><h3>${due ? `${due} card${due > 1 ? "s" : ""} to review` : "Nothing due right now"}</h3><p class=help>Questions you got wrong come back after 1, 2, 4, 8 and 16 days until you've mastered them.</p>${due ? `<button class="btn sm" data-c="revStart">Start review</button>` : `<p class=sub>${nextDueText()}</p>`}</div>
- <div class=card><span class=eyebrow>Practice studio</span><h3>Role-play & interviews</h3><p class=help>Pitch a sceptical CFO, handle an incident, or answer timed interview questions, and get scored.</p><button class="btn sm" data-c="go:practice">Open the studio</button></div>
- <div class=card><span class=eyebrow>Capstone</span><h3>Your AI PRD</h3><div class=bar><i style="width:${prdCount() / C.PRD.length * 100}%"></i></div><p class=sub>${prdCount()} of ${C.PRD.length} sections drafted</p><button class="btn sm g" data-c="go:prd">${prdCount() ? "Continue" : "Start"} the capstone</button></div>
- <div class=card><span class=eyebrow>Achievements</span><h3>${got.length} of ${ACH.length} unlocked</h3>${got.length ? `<div class=ach-row aria-hidden=true>${got.slice(-6).map((a) => `<span title="${a[2]}">${a[1]}</span>`).join("")}</div>` : '<p class=sub>Complete a lesson to earn your first badge.</p>'}<p style="margin-bottom:0"><button class="btn sm g" data-c="go:progress">See progress</button></p></div>
-</div>
-${!AU && ACC.on ? `<div class="card flat" style="border-color:var(--ac)"><span class=eyebrow>Keep your progress safe</span><h3>Sign in to save your progress to your account</h3><p class=help>Right now your progress lives only in this browser. Sign in with Google to continue on any device, and never lose it if you clear your browser.</p><button class=btn data-c=signin>Continue with Google</button></div>` : ""}
-${S.product ? "" : productCard()}`
+  document.title = "Today · AI PM Coach";
+  const nx = nextLesson(), l = nx && L(nx), due = dueCards().length, done = roadDone(), pc = prdCount();
+  const hr = new Date().getHours(), hi = hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening", nm = AU && AU.name ? AU.name.split(" ")[0] : "";
+  const pos = l ? S.road.findIndex((x) => x.id == nx) + 1 : 0;
+  app.innerHTML = `<div class=a-cols><div class=a-main>
+<div id=t-hello class=hello>${mark(true)}<div><h1>${hi}${nm ? ", " + esc(nm) : ""}.</h1><p class=soft>${done ? "You've finished every lesson in your plan." : `You've finished ${nDone()} of ${S.road.length} lessons.`}</p></div></div>
+${guest() ? `<div class="note-c"><b>Sign in to start your first lesson.</b><p class=help>It's free. Without an account, your plan is kept only until you close this page.</p><button class="btn sm" data-c=signin>Continue with Google</button></div>` : ""}
+${S.newLessons ? `<div class="note-c"><b>New lessons were added to your plan</b><p class=help>AI UX & trust, data strategy, prompting vs RAG vs fine-tuning, responsible AI, launching & monitoring, and pricing. Your progress is kept.</p><button class="btn sm" data-c="go:road">See my plan</button> <button class=lnk data-c="dismissNew">Dismiss</button></div>` : ""}
+${l ? `<section id=t-next class="card a-card"><p class="mu m0">${S.open[nx] ? "Continue where you stopped" : "Next up"} · lesson ${pos} of ${S.road.length} · ${C.STAGES[l.stage]}</p><h2>${esc(l.title)}</h2><p class=soft>${esc(l.why)}</p><p class=mu>About ${l.min} minutes</p><button class=btn data-c="openL:${nx}">${S.open[nx] ? "Continue the lesson" : "Start the lesson"}</button></section>` : whatsNextH()}
+<section id=t-chat class=coachcard><div class=say>${mark()}<div id=hcBody>${coachCardH()}</div></div></section>
+${S.product ? "" : productCard()}
+</div><aside class="a-side side">
+<section id=t-week>${homeStats()}</section>
+<section><h3>To review</h3>${due ? `<p class=m0>${due} question${due > 1 ? "s" : ""} you missed before.</p><p><button class="btn sm g" data-c="revStart">Review now</button></p>` : `<p class="mu m0">Nothing due. ${nextDueText()}</p>`}</section>
+<section><h3>Practice</h3><p class="mu m0">Pitch a sceptical CFO, handle an incident or answer timed interview questions.</p><p><button class="btn sm g" data-c="go:practice">Open the studio</button></p></section>
+<section><h3>Your capstone</h3><p class=m0>${pc} of ${C.PRD.length} sections drafted</p><div class="dots" aria-hidden=true>${C.PRD.map((x, k) => `<span class="${k < pc ? "on" : ""}"></span>`).join("")}</div><p><button class="btn sm g" data-c="go:prd">${pc ? "Continue" : "Start"} the capstone</button></p></section>
+</aside></div>`;
+  if (!S.toured) setTimeout(tour, 400);
 };
 function homeStats() {
   const wk = weekCount(), tg = weekTarget(), st = streak();
-  return ` <div class=card><span class=eyebrow>This week</span><div class=stat>${ring(wk, tg, `${Math.min(wk, 99)}/${tg}<small>days</small>`)}<div><b>${wk >= tg ? "Weekly goal reached 🎉" : `${tg - wk} more learning day${tg - wk == 1 ? "" : "s"} to hit your goal`}</b><p class=sub>Goal: ${tg} day${tg > 1 ? "s" : ""} a week, based on your ${Q[8][2][S.profile.time].toLowerCase()}.</p></div></div></div>
- <div class=card><span class=eyebrow>Streak</span><div class=stat><div class=streak aria-hidden=true>🔥</div><div><div class=big>${st} day${st == 1 ? "" : "s"}</div><p class=sub>${st ? "Keep it going: answer today's challenge." : "Do any lesson activity or today's challenge to start a streak."} Best: ${S.best || 0}</p></div></div></div>`
+  return `<h3>This week</h3><p class=wk><b>${Math.min(wk, 99)}</b> <span class=mu>of ${tg} day${tg > 1 ? "s" : ""}</span></p><div class=dots aria-hidden=true>${Array.from({ length: tg }, (_, k) => `<span class="${k < wk ? "on" : ""}"></span>`).join("")}</div>
+<p class="mu sm">${wk >= tg ? "Goal reached. Anything more is a bonus." : `${tg - wk} more learning day${tg - wk == 1 ? "" : "s"} reaches your goal.`}${st > 1 ? ` ${st} days in a row.` : ""}</p>`
 }
+// "How much time do you have?" 20 minutes opens the lesson; 5 minutes shows today's question right here.
+let HC = 0;
+function coachCardH() {
+  const nx = nextLesson(), dd = (S.daily[dkey()] || {}).done;
+  if (HC || dd) return `<p class=m0>${dd ? "Today's question is done, so today counts as a learning day." : "Then let's do one question. It still counts as a learning day."}</p><div id=daily>${dailyH()}</div>${dd && nx ? `<p class=m0><button class=lnk data-c="openL:${nx}">Found more time? Open the lesson</button></p>` : ""}`;
+  return `<p class=m0>How much time do you have today?</p><div class=quick><button data-c=hcFull>${nx ? "About 20 minutes" : "20 minutes or more"}</button><button data-c=hcShort>Only 5 minutes</button></div>`;
+}
+A.hcFull = () => { const nx = nextLesson(); ev("coach_time", { t: 20 }); if (nx) A.openL(nx); else go("practice") };
+A.hcShort = () => { HC = 1; ev("coach_time", { t: 5 }); const el = $("#hcBody"); if (el) el.innerHTML = coachCardH() };
+// After the whole plan is done: add lessons, write the capstone, practise, keep it fresh.
+function whatsNextH() {
+  const extra = C.LESSONS.filter((l) => !(S.road || []).some((x) => x.id == l.id)).length, pc = prdCount(), due = dueCards().length;
+  const row = (t, d, b) => `<li><div><b>${t}</b><span class=mu>${d}</span></div>${b}</li>`;
+  return `<section id=t-next class="card a-card"><p class="mu m0">Your plan is complete</p><h2>What's next</h2><p class=soft>You've built the foundations. Here's how to keep going.</p><ul class=next-list>
+${extra ? row("Add more lessons", `${extra} lesson${extra > 1 ? "s aren't" : " isn't"} in your plan yet.`, `<button class="btn sm" data-c=goMore>Choose lessons</button>`) : ""}
+${row("Write your capstone PRD", `${pc} of ${C.PRD.length} sections drafted. It's the piece to show employers.`, `<button class="btn sm g" data-c="go:prd">${pc ? "Continue" : "Start"}</button>`)}
+${row("Practise real conversations", "Role-play a sceptical CFO or answer timed interview questions.", `<button class="btn sm g" data-c="go:practice">Open the studio</button>`)}
+${row("Keep it fresh", due ? `${due} review question${due > 1 ? "s" : ""} waiting, plus a new daily question.` : "A new question every day, and missed questions come back.", due ? `<button class="btn sm g" data-c=revStart>Review</button>` : `<button class="btn sm g" data-c=hcShort>Today's question</button>`)}
+</ul></section>`
+}
+A.goMore = () => { go("road"); setTimeout(() => A.jump("more"), 60) };
+function moreLessonsH() {
+  if (!S.road) return "";
+  const extra = C.LESSONS.filter((l) => !S.road.some((x) => x.id == l.id));
+  if (!extra.length) return "";
+  return `<div class=stage-h id=more><h2>More lessons you can add</h2><span class=sub>Not in your plan yet</span></div>` + extra.map((l) => `<div class="card lcard"><div class=body><b>${esc(l.title)}</b><span class=sub>${l.min} min · ${C.STAGES[l.stage]}</span></div><button class="btn sm g go" data-c="addL:${l.id}">Add to my plan</button></div>`).join("");
+}
+A.addL = (id) => {
+  if (!L(id) || !S.road || S.road.some((x) => x.id == id)) return;
+  S.road.push({ id, d: S.profile && S.profile.ai >= 3 ? "Deep dive" : "Standard" }); save(); ev("lesson_add", { id }); render(); toast(`Added "${L(id).title}" to your plan`);
+};
+
+// ---------------- First-visit tour (Home) ----------------
+const TOUR = [
+  ["t-hello", "Hi, I'm your coach. Let me show you around: three stops, about 15 seconds."],
+  ["t-next", "Stop 1: your next lesson. There's always one main thing to do, and it's here."],
+  ["t-chat", "Stop 2: short on time? Tell me here and I'll find something that fits."],
+  ["t-week", "Stop 3: your week. A few learning days a week is the goal. After that, I'm in the corner of every page if you need me."],
+];
+let TI = 0;
+function clearTour() { document.body.classList.remove("touring"); $$(".spot").forEach((e) => e.classList.remove("spot")); $$(".guide,.tour-dim").forEach((e) => e.remove()) }
+function tour() {
+  clearTour(); if (S.toured || S.view != "home" || document.getElementById("wall")) return;
+  if (TI >= TOUR.length) { endTour(); return }
+  const [id, text] = TOUR[TI], el = document.getElementById(id); if (!el) { TI++; return tour() }
+  document.body.classList.add("touring");   // page animations create layers that would sit under the dimmer
+  const dim = document.createElement("div"); dim.className = "tour-dim"; dim.addEventListener("click", endTour); document.body.appendChild(dim);
+  el.classList.add("spot");
+  const g = document.createElement("div"); g.className = "guide"; g.setAttribute("role", "dialog"); g.setAttribute("aria-label", "Welcome tour");
+  g.innerHTML = `<div class=say>${mark()}<p class=m0>${esc(text)}</p></div><div class=guide-foot><span class="mu sm">${TI + 1} of ${TOUR.length}</span><span class=row><button class=lnk data-c=tourEnd>Skip</button><button class="btn sm" data-c=tourNext>${TI == TOUR.length - 1 ? "Got it" : "Next"}</button></span></div>`;
+  el.insertAdjacentElement("afterend", g);
+  g.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  g.querySelector(".btn").focus({ preventScroll: true });
+}
+function endTour() { S.toured = 1; TI = 0; save(); clearTour(); ev("tour_done") }
+A.tourNext = () => { TI++; tour() };
+A.tourEnd = endTour;
 A.dismissNew = () => { delete S.newLessons; save(); render() };
 function nextDueText() { const d = Object.values(S.rev).map((c) => c.due).sort()[0]; if (!d) return "Missed practice questions will appear here."; const n = daysBetween(dkey(), d); return `Next card due in ${n} day${n == 1 ? "" : "s"}.` }
 
@@ -363,11 +465,11 @@ function dailyH() {
   const t = dkey(), it = todayQ(), q = it.q, d = S.daily[t] || { a: [] }, m = q.c.length > 1, sel = d.a || [];
   const top = `<div class=row><span class=eyebrow>Today's 1-minute challenge</span><span class=sub>${esc(L(it.lid).title)}</span></div><p><b>${esc(fillX(q.q))}</b>${m ? " <span class=sub>· select all that apply</span>" : ""}</p>`;
   const tiles = `<div class="tiles pr">${q.o.map((o, j) => tileH(o, !d.done && sel.includes(j), `dpick:${j}`, String.fromCharCode(65 + j), "", m, d.done ? (q.c.includes(j) ? "good" : sel.includes(j) ? "bad" : "dim") : "")).join("")}</div>`;
-  if (d.done) return top + tiles + `<p><b>${d.ok ? "Correct! 🎉" : "Not quite."}</b> ${esc(q.e)}</p><p class=sub>${d.ok ? "" : "This question was added to your smart review. "}Come back tomorrow for a new challenge.</p>`;
+  if (d.done) return top + tiles + `<p><b>${d.ok ? "Correct." : "Not quite."}</b> ${esc(q.e)}</p><p class=sub>${d.ok ? "" : "This question was added to your smart review. "}Come back tomorrow for a new challenge.</p>`;
   return top + tiles + `<button class=btn data-c="dcheck" ${sel.length ? "" : "disabled"}>Check answer</button>`;
 }
 A.dpick = (j) => { const t = dkey(), q = todayQ().q, d = S.daily[t] = S.daily[t] || { a: [] }; if (d.done) return; d.a = q.c.length > 1 ? (d.a.includes(j) ? d.a.filter((x) => x != j) : d.a.concat(j)) : [j]; save(); $$("#daily .opt").forEach((b, n) => { b.classList.toggle("on", d.a.includes(n)); b.setAttribute("aria-pressed", d.a.includes(n)) }); const cb = $('#daily [data-c="dcheck"]'); if (cb) cb.disabled = !d.a.length };
-A.dcheck = () => { const t = dkey(), it = todayQ(), d = S.daily[t]; if (!d || !d.a.length) return; d.done = true; d.ok = d.a.slice().sort().join() == it.q.c.slice().sort().join(); if (!d.ok) addCard(it.lid, it.q); save(); act("daily", { ok: d.ok }); $("#daily").innerHTML = dailyH(); const hs = $("#homeStats"); if (hs) hs.innerHTML = homeStats(); toast(d.ok ? "Correct! 🎉" : "Not quite - see why below 👇") };
+A.dcheck = () => { const t = dkey(), it = todayQ(), d = S.daily[t]; if (!d || !d.a.length) return; d.done = true; d.ok = d.a.slice().sort().join() == it.q.c.slice().sort().join(); if (!d.ok) addCard(it.lid, it.q); save(); act("daily", { ok: d.ok }); $("#daily").innerHTML = dailyH(); const hs = $("#t-week"); if (hs) hs.innerHTML = homeStats(); toast(d.ok ? "Correct. Today counts as a learning day." : "Not quite. The explanation is below.") };
 
 // ---------------- Smart review (spaced repetition) ----------------
 const cardKey = (lid, q) => lid + "|" + hash(q.q);
@@ -378,12 +480,12 @@ A.revStart = () => { RV = { keys: shuffle(dueCards()), i: 0, a: [], done: false,
 V.review = () => {
   document.title = "Review · AI PM Coach";
   if (!RV || !RV.keys.length) { app.innerHTML = `<h1>Smart review</h1><div class=card><p>Nothing to review right now. ${nextDueText()}</p><button class=btn data-c="go:home">Back home</button></div>`; return }
-  if (RV.i >= RV.keys.length) { app.innerHTML = `<h1>Review complete 🧠</h1><div class=card><p class=big>${RV.right} / ${RV.keys.length}</p><p class=mu>Cards you got right come back later; the others return tomorrow. Mastered cards retire after 16 days.</p><button class=btn data-c="go:home">Back home</button></div>`; return }
+  if (RV.i >= RV.keys.length) { app.innerHTML = `<h1>Review complete</h1><div class=card><p class=big>${RV.right} / ${RV.keys.length}</p><p class=mu>Cards you got right come back later; the others return tomorrow. Mastered cards retire after 16 days.</p><button class=btn data-c="go:home">Back home</button></div>`; return }
   const k = RV.keys[RV.i], c = S.rev[k], q = c.q, m = q.c.length > 1, sel = RV.a;
   app.innerHTML = `<div class=row><h1 style="font-size:1.7rem">Smart review</h1><span class=sub>Card ${RV.i + 1} of ${RV.keys.length}</span></div><div class=bar><i style="width:${RV.i / RV.keys.length * 100}%"></i></div>
 <div class=card><span class=eyebrow>${esc(L(c.lid) ? L(c.lid).title : "Review")}</span><p><b>${esc(fillX(q.q))}</b>${m ? " <span class=sub>· select all that apply</span>" : ""}</p>
 <div class="tiles pr">${q.o.map((o, j) => tileH(o, !RV.done && sel.includes(j), `rpick:${j}`, String.fromCharCode(65 + j), "", m, RV.done ? (q.c.includes(j) ? "good" : sel.includes(j) ? "bad" : "dim") : "")).join("")}</div>
-${RV.done ? `<p><b>${RV.ok ? "Correct! 🎉" : "Not quite."}</b> ${esc(q.e)}</p><button class=btn data-c="rnext">Next →</button>` : `<button class=btn data-c="rcheck" ${sel.length ? "" : "disabled"}>Check answer</button>`}</div>`
+${RV.done ? `<p><b>${RV.ok ? "Correct." : "Not quite."}</b> ${esc(q.e)}</p><button class=btn data-c="rnext">Next →</button>` : `<button class=btn data-c="rcheck" ${sel.length ? "" : "disabled"}>Check answer</button>`}</div>`
 };
 A.rpick = (j) => { if (RV.done) return; const q = S.rev[RV.keys[RV.i]].q; RV.a = q.c.length > 1 ? (RV.a.includes(j) ? RV.a.filter((x) => x != j) : RV.a.concat(j)) : [j]; $$("#app .opt").forEach((b, n) => { b.classList.toggle("on", RV.a.includes(n)); b.setAttribute("aria-pressed", RV.a.includes(n)) }); $('[data-c="rcheck"]').disabled = !RV.a.length };
 A.rcheck = () => {
@@ -396,23 +498,30 @@ A.rnext = () => { if (RV.mastered) { delete S.rev[RV.mastered]; RV.mastered = nu
 // ================= Roadmap =================
 V.road = () => {
   if (!S.road) { go("prof"); return }
-  document.title = "Roadmap · AI PM Coach";
+  document.title = "Your plan · AI PM Coach";
   const r = S.road, dn = nDone(), nx = nextLesson(), mins = r.reduce((a, x) => a + (L(x.id) ? L(x.id).min : 0), 0);
   const stages = [...new Set(r.map((x) => L(x.id).stage))].sort();
   let n = 0;
-  app.innerHTML = `<div class=row><h1>Your roadmap</h1><button class="btn g sm" data-c="go:prof">Edit profile</button></div>
-<div class=bar><i style="width:${dn / r.length * 100}%"></i></div>${guest() ? `<div class="card flat" style="border-color:var(--ac)"><b>Your first lesson is free.</b><p class=help style="margin:4px 0 10px">Sign in with Google (free) to unlock the rest of your roadmap and your AI coach. Your progress is kept.</p><button class="btn sm" data-c=signin>Continue with Google</button></div>` : ""}<p class=mu>${dn} of ${r.length} lessons complete · about ${Math.max(1, Math.ceil(mins / 60 / (S.w || 2)))} week${Math.ceil(mins / 60 / (S.w || 2)) > 1 ? "s" : ""} at your pace (${Math.round(mins / 60 * 10) / 10} hours in total)</p>
+  app.innerHTML = `<div class=row><h1>Your plan</h1><button class="btn g sm" data-c="go:prof">Edit profile</button></div>
+<div class=bar><i style="width:${dn / r.length * 100}%"></i></div>${guest() ? `<div class="card flat" style="border-color:var(--ac)"><b>Sign in to save this plan and start learning.</b><p class=help style="margin:4px 0 10px">It's free. Without an account, your plan is kept only until you close this page.</p><button class="btn sm" data-c=signin>Continue with Google</button></div>` : ""}<p class=mu>${dn} of ${r.length} lessons complete · about ${Math.max(1, Math.ceil(mins / 60 / (S.w || 2)))} week${Math.ceil(mins / 60 / (S.w || 2)) > 1 ? "s" : ""} at your pace (${Math.round(mins / 60 * 10) / 10} hours in total)</p>
 ${stages.map((s) => { const items = r.filter((x) => L(x.id).stage == s), sm = items.reduce((a, x) => a + L(x.id).min, 0), sd = items.filter((x) => S.done[x.id]).length;
     return `<div class=stage-h><h2>${C.STAGES[s]}</h2><span class=sub>${sd}/${items.length} done · ${sm} min</span></div>` + items.map((it) => { n++; const l = L(it.id), done = S.done[it.id], cf = S.conf[it.id], isNext = it.id == nx;
       return `<div class="card lcard ${done ? "done" : ""} ${isNext ? "next" : ""}"><div class=num aria-hidden=true>${done ? "✓" : n}</div><div class=body><b>${l.title}</b><span class=sub>${l.min} min · ${it.d}${cf && cf.pre && cf.post ? ` · confidence ${cf.pre}→${cf.post}` : ""}</span><div style="margin-top:6px">${done ? '<span class="st d">Completed</span>' : isNext ? '<span class="pill hot">Next up</span>' : S.open[it.id] ? '<span class="st p">In progress</span>' : '<span class="st n">Not started</span>'}</div></div><button class="btn sm go ${done ? "g" : ""}" data-c="openL:${it.id}">${locked(it.id) ? "🔒 Unlock" : done ? "Review" : S.open[it.id] ? "Continue" : "Start"}</button></div>` }).join("") }).join("")}
-<div class="card flat" style="margin-top:24px"><b>Finished your roadmap?</b><p class=help>The capstone PRD, the practice studio and your certificate are waiting.</p><button class="btn sm g" data-c="go:prd">Capstone</button> <button class="btn sm g" data-c="go:cert">Certificate</button></div>`
+${moreLessonsH()}`
 };
 
 // ================= Lesson =================
 A.openL = (id) => { if (locked(id)) { wall("lesson"); return } if (!S.open[id]) { S.open[id] = 1; save(); ev("lesson_open", { id }) } go("lesson", id) };
-const STEP_NAMES = [["video", "Video", "sec-video"], ["read", "Read", "sec-read"], ["practice", "Practice", "sec-practice"], ["reflect", "Reflect", "sec-reflect"], ["mentor", "Mentor", "sec-mentor"]];
+const STEP_NAMES = [["video", "Video", "sec-video"], ["read", "Understand", "sec-read"], ["practice", "Practice", "sec-practice"], ["reflect", "Reflect", "sec-reflect"], ["mentor", "Ask the coach", "sec-mentor"]];
 const stepsOf = (id) => (S.steps[id] = S.steps[id] || {});
-function markStep(k) { const id = S.cur, s = stepsOf(id); if (s[k]) return; s[k] = 1; save(); const b = $(`#stepsNav [data-step="${k}"]`); if (b) { b.classList.add("ok"); b.firstChild.textContent = "✓ " } if (k == "practice") finH() }
+function markStep(k) { const id = S.cur, s = stepsOf(id); if (s[k]) return; s[k] = 1; save(); const b = $(`#stepsNav [data-step="${k}"]`); if (b) { b.classList.add("ok"); b.firstChild.textContent = "✓ " } const n = $("#narr"); if (n) n.innerHTML = narrH(); if (k == "practice") finH() }
+// The narrator bar: how long is left and what comes next, updated as steps are done.
+function narrH() {
+  const l = L(S.cur); if (!l) return ""; const st = stepsOf(l.id), left = STEP_NAMES.filter(([k]) => !st[k]), nd = STEP_NAMES.length - left.length;
+  const min = Math.max(1, Math.round(l.min * left.length / STEP_NAMES.length));
+  const txt = S.done[l.id] ? "Lesson complete" : !left.length ? "Ready to finish: mark the lesson complete below" : `About ${min} minute${min == 1 ? "" : "s"} left · next: ${left[0][1].toLowerCase()}`;
+  return `${mark()}<span>${txt}</span><span class=nbar aria-hidden=true><i style="width:${S.done[l.id] ? 100 : nd / STEP_NAMES.length * 100}%"></i></span>`;
+}
 A.jump = (sec) => { const el = document.getElementById(sec); if (el) { const y = el.getBoundingClientRect().top + scrollY - 118; scrollTo({ top: y, behavior: "smooth" }) } };
 let readObs = null;
 V.lesson = () => {
@@ -422,20 +531,20 @@ V.lesson = () => {
   S.chat[id] = S.chat[id] || [];
   document.title = l.title + " · AI PM Coach";
   const und = l.und.map((p) => fillX(p)), skim = it.d == "Skim";
-  app.innerHTML = `<button class="btn g sm" data-c="go:road">&larr; Roadmap</button><h1 style="margin-top:14px">${l.title}</h1><p class=mu style="margin-top:0">${l.min} min · ${C.STAGES[l.stage]} · ${it.d}${it.d == "Deep dive" ? " (the longer video is selected, and the further reading is worth it)" : skim ? " (short version first; expand if you need it)" : ""}</p>
+  const pos = (S.road || []).findIndex((x) => x.id == id) + 1;
+  app.innerHTML = `<div class=narrator id=narr role=status>${narrH()}</div><button class=lnk data-c="go:home">Back to today</button><p class="mu" style="margin:18px 0 0">${pos ? `Lesson ${pos} of ${S.road.length} · ` : ""}${C.STAGES[l.stage]}</p><h1 style="margin-top:6px">${l.title}</h1><p class=mu style="margin-top:0">${l.min} min · ${it.d}${it.d == "Deep dive" ? " (the longer video is selected, and the further reading is worth it)" : skim ? " (short version first; expand if you need it)" : ""}</p>
 <div class=steps-nav id=stepsNav aria-label="Lesson steps">${STEP_NAMES.map(([k, t, sec]) => `<button data-c="jump:${sec}" data-step="${k}" class="${st[k] ? "ok" : ""}"><span>${st[k] ? "✓ " : ""}</span>${t}</button>`).join("")}</div>
-${cf.pre ? "" : `<div class="card flat" id=confPre><b>Before you start: how confident are you with ${esc(l.title.toLowerCase())}?</b>${scale5("pre")}</div>`}
-<div class=card id=sec-why><span class=eyebrow>Why it matters</span><p>${esc(l.why)}</p></div>
+${cf.pre ? "" : `<div class="card flat" id=confPre><b>Before you start: how confident are you with ${esc(l.title)}?</b>${scale5("pre")}</div>`}
+<div class="annot" id=sec-why><div class=card><span class=eyebrow>Why it matters</span><p>${esc(l.why)}</p></div><aside class=margin>${mark()}<div><b>Key idea</b>${esc(l.summary)}</div></aside></div>
 <div class=card id=sec-video><span class=eyebrow>Learn</span><p class=help>Focus on the concepts behind product decisions; you don't need every technical detail.</p><div id=vd></div></div>
 <div class="card und ${skim ? "" : "open"}" id=sec-read><span class=eyebrow>Understand</span><p>${und[0]}</p><div class=more>${und.slice(1).map((p) => `<p>${p}</p>`).join("")}</div>${skim ? `<button class="lnk showmore" data-c="undOpen">Show the full explanation</button>` : ""}
 <p class=mu style="margin:18px 0 4px"><b>Go deeper</b> · further reading (opens in a new tab)</p>${l.reads.map((r) => `<a class=rd href="${esc(r[2])}" target=_blank rel="noopener noreferrer"><i aria-hidden=true>↗</i><span><b>${esc(r[0])}</b><span class=mu>${esc(r[1])} · ${esc(r[3])}</span></span></a>`).join("")}<span id=readEnd></span></div>
+<div class=check id=chk>${st.read ? `<p class="mu m0">${mark()} You said this made sense. If anything is unclear later, ask me in the corner.</p>` : `<p class=m0><b>Does that make sense so far?</b></p><div class="row l" style="margin-top:12px"><button class="btn sm" data-c=chkYes>Yes, carry on</button><button class="btn sm g" data-c=chkNo>Not quite</button></div>`}</div>
 <div class=card id=sec-practice><span class=eyebrow>Practice</span><div id=pr></div></div>
 <div class=card id=sec-reflect>${reflectH(l)}</div>
-<div class=card id=sec-mentor><span class=eyebrow>AI Mentor</span><p class=help>Explain the concept in your own words and get feedback, or ask anything about it.</p>${guest() ? `<p>🔒 The AI Mentor is for signed-in learners. Sign in with Google (free) to chat about this lesson, get feedback on your explanations and ask "why" on practice answers.</p><button class=btn data-c=signin>Continue with Google</button></div>` : `<div id=ch class=chat aria-live=polite></div>
-<textarea id=mi rows=2 data-enter=ask placeholder="Explain it, or ask a question... (Enter to send, Shift+Enter for a new line)"></textarea>
-<div class=row style="margin-top:10px"><button class=btn data-c=ask id=askBtn>Send</button><button class="lnk" data-c=clearChat>Clear chat</button></div></div>`}
+<div class=card id=sec-mentor><span class=eyebrow>Ask your coach</span><p class=help>Explain the idea in your own words and get feedback, or ask anything about it. The chat stays open as you move around the app.</p><div class=chips>${starters().map((t, k) => `<button class=chip data-c="starter:${k}">${esc(t)}</button>`).join("")}</div><p style="margin-bottom:0"><button class="btn sm" data-c=coachOpen>Open the chat</button></p></div>
 <div id=finbox></div>`;
-  rv(); rp(); chatH(); finH();
+  rv(); rp(); finH();
   if (readObs) readObs.disconnect();
   if ("IntersectionObserver" in window) { readObs = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { markStep("read"); readObs.disconnect() } }, { threshold: 1 }); readObs.observe($("#readEnd")) }
 };
@@ -446,6 +555,8 @@ A.conf = (kind, n) => {
   else completeLesson();
 };
 A.undOpen = () => { $("#sec-read").classList.add("open"); markStep("read") };
+A.chkYes = () => { markStep("read"); ev("checkpoint", { ok: 1 }); const c = $("#chk"); if (c) c.innerHTML = `<p class="mu m0">${mark()} Good. Next, check yourself with a few questions.</p>`; setTimeout(() => A.jump("sec-practice"), 250) };
+A.chkNo = () => { if (needAcc()) return; ev("checkpoint", { ok: 0 }); const l = L(S.cur); coachAsk(`I didn't quite get "${l.title}". Can you explain it another way, with a simple example from ${IND()}?`) };
 
 // ---------------- Video ----------------
 let embedBlocked = false;
@@ -480,7 +591,7 @@ A.vidNext = () => { const l = L(S.cur), cur = curVideo(l), rk = vidRank(l).filte
 A.vrate = (n) => {
   const l = L(S.cur), v = curVideo(l); S.vr[v[0]] = S.vr[v[0]] == n ? 0 : n; if (!S.vr[v[0]]) delete S.vr[v[0]];
   save(); ev("video_rate", { id: S.cur, video: v[0], rating: S.vr[v[0]] || 0 }); rv();
-  if (S.vr[v[0]] < 0) toast("Thanks. Tap \"Show me a different video\" to try another one."); else if (S.vr[v[0]] > 0) toast("Thanks for rating it 👍");
+  if (S.vr[v[0]] < 0) toast("Thanks. Tap \"Show me a different video\" to try another one."); else if (S.vr[v[0]] > 0) toast("Thanks for rating it");
 };
 A.vidOut = (el) => { markStep("video"); seenVideo(); window.open(el.href, "_blank", "noopener") };
 // Clicking into the embedded player moves focus to the iframe, which blurs the window: count it as watching.
@@ -496,17 +607,17 @@ function rp() {
   const dots = `<div class=dots aria-hidden=true>${qs.map((q, j) => `<b class="${st.k[j] ? "c" : j == st.i ? "d" : ""}"></b>`).join("")}</div>`;
   if (st.i >= qs.length) {
     const n = qs.filter((q, j) => okAt(st, qs, j)).length; markStep("practice");
-    el.innerHTML = `${dots}<h2>${n} / ${qs.length} correct ${n == qs.length ? "🏆" : n >= qs.length / 2 ? "👏" : "💪"}</h2><p class=mu>${n == qs.length ? "Perfect! Reflect on the lesson next, then mark it complete." : "Missed questions were added to your smart review, so you'll see them again in a day or two."}</p>
-<div class=nav><button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button><span class=row><button class="btn g sm" data-c="pretry">Try again (shuffled)</button><button class="btn sm" data-c="pz">${guest() ? "🔒" : "✨"} New AI questions</button></span></div>`; return
+    el.innerHTML = `${dots}<h2>${n} / ${qs.length} correct</h2><p class=mu>${n == qs.length ? "Perfect! Reflect on the lesson next, then mark it complete." : "Missed questions were added to your smart review, so you'll see them again in a day or two."}</p>
+<div class=nav><button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button><span class=row><button class="btn g sm" data-c="pretry">Try again (shuffled)</button><button class="btn sm" data-c="pz">${guest() ? "🔒 " : ""}New AI questions</button></span></div>`; return
   }
   const q = qs[st.i], sel = st.a[st.i] || [], k = st.k[st.i], good = k && okAt(st, qs, st.i);
   el.innerHTML = `${dots}<p class=mu>Question ${st.i + 1} of ${qs.length}${q.m ? " · select all that apply" : ""}</p><p><b>${esc(fillX(q.q))}</b></p>
 <div class="tiles pr">${q.o.map((o, j) => tileH(o, !k && sel.includes(j), `ps:${j}`, String.fromCharCode(65 + j), "", q.m, k ? (q.c.includes(j) ? "good" : sel.includes(j) ? "bad" : "dim") : "")).join("")}</div>
-${k ? `<p><b>${good ? "Correct! 🎉" : "Not quite."}</b> ${esc(q.e)}</p>${good ? "" : `<p><button class="btn g sm" data-c="why:${st.i}">${guest() ? "🔒" : "💬"} Ask the mentor why</button></p>`}` : ""}
+${k ? `<p><b>${good ? "Correct." : "Not quite."}</b> ${esc(q.e)}</p>${good ? "" : `<p><button class="btn g sm" data-c="why:${st.i}">${guest() ? "🔒 " : ""}Ask the coach why</button></p>`}` : ""}
 <div class=nav>${st.i > 0 ? '<button class="btn g arrow" data-c="pn:-1" aria-label="Previous question">←</button>' : "<span></span>"}${k ? `<button class=btn data-c="pn:1">${st.i == qs.length - 1 ? "See results" : "Next"} →</button>` : `<button class=btn data-c="pc" ${sel.length ? "" : "disabled"}>Check answer</button>`}</div>`
 }
 A.ps = (j) => { const st = pst(), q = pqs()[st.i]; if (st.k[st.i]) return; let a = st.a[st.i] || []; a = q.m ? (a.includes(j) ? a.filter((x) => x != j) : a.concat(j)) : [j]; st.a[st.i] = a; save(); $$("#pr .opt").forEach((b, n) => { b.classList.toggle("on", a.includes(n)); b.setAttribute("aria-pressed", a.includes(n)) }); const cb = $('#pr [data-c="pc"]'); if (cb) cb.disabled = !a.length };
-A.pc = () => { const st = pst(), qs = pqs(); if (!(st.a[st.i] || []).length) return; st.k[st.i] = 1; const good = okAt(st, qs, st.i); S.stats = S.stats || { n: 0, ok: 0 }; S.stats.n++; if (good) S.stats.ok++; if (!good) addCard(S.cur, qs[st.i]); save(); act("practice", { id: S.cur, ok: good }); rp(); toast(good ? "Correct! 🎉" : "Not quite - read the explanation 👇") };
+A.pc = () => { const st = pst(), qs = pqs(); if (!(st.a[st.i] || []).length) return; st.k[st.i] = 1; const good = okAt(st, qs, st.i); S.stats = S.stats || { n: 0, ok: 0 }; S.stats.n++; if (good) S.stats.ok++; if (!good) addCard(S.cur, qs[st.i]); save(); act("practice", { id: S.cur, ok: good }); rp(); toast(good ? "Correct." : "Not quite - read the explanation 👇") };
 A.pn = (d) => { const st = pst(); st.i = Math.max(0, st.i + d); save(); rp() };
 A.pretry = () => { const st = pst(), qs = pqs().map((q) => { const order = shuffle(q.o.map((_, i) => i)); return { q: q.q, o: order.map((i) => q.o[i]), c: q.c.map((c) => order.indexOf(c)), e: q.e } }); S.pr[S.cur] = { i: 0, a: [], k: [], qs, seen: st.seen }; save(); rp() };
 let gen = false;
@@ -517,15 +628,14 @@ A.pz = async () => {
     const arr = await aiJSON({ mode: "questions", info: info(id), seen }, /\[[\s\S]*\]/);
     const qs = (Array.isArray(arr) ? arr : []).filter((a) => a && typeof a.q == "string" && Array.isArray(a.o) && a.o.length >= 3 && Array.isArray(a.c) && a.c.length && a.c.every((n) => Number.isInteger(n) && n >= 0 && n < a.o.length)).map((a) => ({ q: a.q, o: a.o.map(String), c: a.c, e: String(a.e || "") }));
     if (qs.length < 3) throw { code: "bad_format" };
-    S.pr[id] = { i: 0, a: [], k: [], qs, seen }; save(); act("ai_questions"); toast("Fresh questions ready ✨")
+    S.pr[id] = { i: 0, a: [], k: [], qs, seen }; save(); act("ai_questions"); toast("Fresh questions ready")
   } catch (e) { toast(aiErr(e)) }
   gen = false; rp()
 };
 A.why = (i) => {
   if (needAcc()) return;
   const st = pst(), q = pqs()[i], mine = (st.a[i] || []).map((j) => q.o[j]), right = q.c.map((j) => q.o[j]);
-  const box = $("#mi"); box.value = `In the practice question "${fillX(q.q)}", I chose "${mine.join('", "')}", but the right answer is "${right.join('", "')}". Can you explain why, and what I misunderstood?`;
-  A.jump("sec-mentor"); A.ask();
+  coachAsk(`In the practice question "${fillX(q.q)}", I chose "${mine.join('", "')}", but the right answer is "${right.join('", "')}". Can you explain why, and what I misunderstood?`);
 };
 
 // ---------------- Reflect ----------------
@@ -533,7 +643,7 @@ const refs = (id) => { const r = S.ref[id]; return Array.isArray(r) ? r : r ? [r
 function reflectH(l) {
   const id = l.id, a = refs(id), n = a.filter((v) => v && v.trim()).length;
   return `<span class=eyebrow>Reflect</span><p class=help>Apply the idea to your own work. Aim for 2-4 sentences: name a real feature or user, explain your reasoning, and note one risk or trade-off. Then tap <b>Get feedback</b> for coaching and an example answer. <b id=rfc>${n}</b> of ${l.reflect.length} answered, saved on this device.</p>
-${l.reflect.map((r, k) => { const f = (S.rfb[id] || {})[k], cur = (a[k] || "").trim(); return `<div class=rq><span class=tag>${esc(r[0])}</span><p><b>${esc(fillX(r[1]))}</b></p><textarea class=rfa data-in="ref:${k}" rows=3 placeholder="Your answer..." aria-label="${esc(fillX(r[1]))}">${esc(a[k] || "")}</textarea><div class=rfr><button type=button class="btn g sm" data-c="rfg:${k}" id=rfb${k}>${guest() ? "🔒" : "✨"} Get feedback</button><span class="mu sm" id=rfm${k}></span></div><div id=rff${k}>${f ? fbBox(f, cur && cur !== f.for) : ""}</div></div>` }).join("")}`
+${l.reflect.map((r, k) => { const f = (S.rfb[id] || {})[k], cur = (a[k] || "").trim(); return `<div class=rq><span class=tag>${esc(r[0])}</span><p><b>${esc(fillX(r[1]))}</b></p><textarea class=rfa data-in="ref:${k}" rows=3 placeholder="Your answer..." aria-label="${esc(fillX(r[1]))}">${esc(a[k] || "")}</textarea><div class=rfr><button type=button class="btn g sm" data-c="rfg:${k}" id=rfb${k}>${guest() ? "🔒 " : ""}Get feedback</button><span class="mu sm" id=rfm${k}></span></div><div id=rff${k}>${f ? fbBox(f, cur && cur !== f.for) : ""}</div></div>` }).join("")}`
 }
 IN.ref = (el, k) => { const id = S.cur, a = refs(id).slice(); a[+k] = el.value; S.ref[id] = a; const c = $("#rfc"); if (c) c.textContent = a.filter((v) => v && v.trim()).length; if (a.some((v) => v && v.trim().length >= 25)) markStep("reflect"); clearTimeout(IN._rt); IN._rt = setTimeout(save, 400) };
 const busy = {};
@@ -545,55 +655,108 @@ A.rfg = async (k) => {
   msg.textContent = ""; busy["rf" + k] = 1; btn.disabled = true; btn.textContent = "Reviewing..."; box.innerHTML = '<div class="rfb ld">Reviewing your answer...</div>';
   try { const f = normFb(await aiJSON({ mode: "reflect", info: info(id), question: q, answer: a })); f.for = a; (S.rfb[id] = S.rfb[id] || {})[k] = f; save(); markStep("reflect"); act("reflect_feedback", { rating: f.rating }); box.innerHTML = fbBox(f, false) }
   catch (e) { box.innerHTML = `<div class="rfb er">${esc(aiErr(e))}</div>` }
-  finally { busy["rf" + k] = 0; btn.disabled = false; btn.textContent = "✨ Get feedback" }
+  finally { busy["rf" + k] = 0; btn.disabled = false; btn.textContent = "Get feedback" }
 };
 
-// ---------------- Mentor ----------------
+// ---------------- Coach (floating chat on every page) ----------------
+// One chat per lesson, plus a general one for the other pages. It opens from the button in the corner.
 function starters() { const l = L(S.cur); return [`Quiz me on ${l.title.toLowerCase()}`, `Give me an example from ${IND()}`, "Explain it more simply", S.product ? "How does this apply to my product?" : "What should I ask engineers about this?"] }
-function chatH() {
-  const ch = $("#ch"); if (!ch) return; const h = S.chat[S.cur] || [], l = L(S.cur);
-  ch.innerHTML = (h.length ? "" : `<div class="msg a coach">Hi! I'm your AI Mentor for "${esc(l.title)}". Try explaining the main idea in your own words, and I'll give you feedback. Or pick a starter below.</div><div class=chips>${starters().map((s, i) => `<button class=chip data-c="starter:${i}">${esc(s)}</button>`).join("")}</div>`)
-    + h.map((m) => `<div class="msg ${m.r == "u" ? "u" : "a"}">${esc(m.t)}</div>`).join("");
+function genStarters() { return S.profile ? ["What should I focus on this week?", "Explain RAG in plain words", "How do I find a good first AI feature at work?", "Quiz me on what I've learned"] : ["What does an AI product manager do?", "Do I need to code to work on AI products?", "How long does the plan take?"] }
+const inLesson = () => S.view == "lesson" && !!L(S.cur);
+const coachKey = () => (inLesson() ? S.cur : "_coach");
+const coachStarters = () => (inLesson() ? starters() : genStarters());
+const PAGE_T = { home: "today", road: "your plan", practice: "the practice studio", rp: "a role-play", iv: "interview practice", prd: "your capstone", progress: "your progress", review: "smart review", prof: "your profile", land: "the home page", quiz: "the questions", about: "about the app", privacy: "the privacy notice", feedback: "feedback", account: "your account", syncChoice: "your progress" };
+let CO = false;
+function coachMount() {
+  if ($("#coach")) return;
+  const p = document.createElement("aside"); p.id = "coach"; p.className = "coach"; p.setAttribute("aria-label", "Your coach");
+  p.innerHTML = `<div class=c-head>${mark()}<div><div class=c-t>Your coach</div><div class="mu sm" id=c-ctx></div></div><button class=lnk data-c=coachClear id=c-clear>Clear</button><button class="c-x" data-c=coachClose aria-label="Minimise the coach">${svg(ICO.x, 18)}</button></div><div class=c-log id=c-log aria-live=polite></div><div class=c-form id=c-form></div>`;
+  const f = document.createElement("button"); f.id = "fab"; f.className = "fab"; f.type = "button"; f.setAttribute("data-c", "coachToggle"); f.setAttribute("aria-label", "Open your coach"); f.setAttribute("aria-expanded", "false"); f.setAttribute("aria-controls", "coach");
+  f.innerHTML = svg(COMPASS, 26);
+  document.body.append(p, f);
 }
-A.starter = (i) => { if (needAcc()) return; $("#mi").value = starters()[i]; A.ask() };
-A.clearChat = () => { if (!(S.chat[S.cur] || []).length) return; if (!confirm("Clear this lesson's chat with the mentor?")) return; S.chat[S.cur] = []; save(); chatH() };
-A.ask = async () => {
-  if (needAcc()) return;
-  const box = $("#mi"), m = box.value.trim(); if (!m || busy.ask) return; const id = S.cur, h = S.chat[id] = S.chat[id] || [];
-  const chips = $("#ch .chips"); if (chips) chips.remove(); const coach = $("#ch .coach"); if (coach) coach.remove();
-  h.push({ r: "u", t: m }); box.value = ""; save(); markStep("mentor"); act("mentor", { id });
-  const ch = $("#ch"), ue = document.createElement("div"); ue.className = "msg u"; ue.textContent = m; const live = document.createElement("div"); live.className = "msg a"; live.textContent = "Thinking..."; ch.append(ue, live); live.scrollIntoView({ block: "nearest" });
-  const btn = $("#askBtn"); busy.ask = 1; if (btn) btn.disabled = true;
-  try { const text = await ai({ mode: "mentor", info: info(id), messages: h.map((x) => ({ role: x.r == "u" ? "user" : "assistant", content: x.t })) }, (tx) => { live.textContent = tx; live.scrollIntoView({ block: "nearest" }) }); live.textContent = text; h.push({ r: "a", t: text }); save() }
+function coachSync() {
+  coachMount(); const hide = S.view == "admin";
+  $("#fab").hidden = hide || CO; if (hide && CO) A.coachClose();
+  $("#c-ctx").textContent = "Looking at: " + (inLesson() ? L(S.cur).title : PAGE_T[S.view] || "this page");
+  if (CO) coachRender();
+}
+function coachRender() {
+  const log = $("#c-log"), form = $("#c-form"); if (!log) return;
+  if (guest()) {
+    log.innerHTML = `<div class="b">I'm your coach. I can explain anything in the lessons, give feedback on your thinking and quiz you.</div><div class="b">Sign in with Google (free) to chat with me.</div>`;
+    form.innerHTML = `<button class="btn sm" data-c=signin style="width:100%">Continue with Google</button>`; $("#c-clear").hidden = true; return;
+  }
+  const h = S.chat[coachKey()] || [];
+  log.innerHTML = (h.length ? "" : `<div class=b>${inLesson() ? `Hi! Ask me anything about "${esc(L(S.cur).title)}", or explain the main idea in your own words and I'll give you feedback.` : "Hi! Ask me anything about AI product management, or about what's on this page."}</div><div class=chips>${coachStarters().map((t, k) => `<button class=chip data-c="coachStarter:${k}">${esc(t)}</button>`).join("")}</div>`)
+    + h.map((m) => `<div class="${m.r == "u" ? "u" : "b"}">${esc(m.t)}</div>`).join("");
+  $("#c-clear").hidden = !h.length;
+  if (!$("#coachIn")) form.innerHTML = `<label for=coachIn class=vh>Ask your coach</label><textarea id=coachIn rows=1 data-enter=coachSend placeholder="Ask anything"></textarea><button class=send data-c=coachSend id=coachBtn aria-label="Send">${svg(ICO.send, 16)}</button>`;
+  log.scrollTop = log.scrollHeight;
+}
+A.coachOpen = () => { coachMount(); CO = true; $("#coach").classList.add("open"); $("#fab").hidden = true; $("#fab").setAttribute("aria-expanded", "true"); coachSync(); ev("coach_open", { page: S.view }); const i = $("#coachIn"); if (i && matchMedia("(min-width:641px)").matches) i.focus() };
+A.coachClose = () => { CO = false; const p = $("#coach"); if (p) p.classList.remove("open"); const f = $("#fab"); if (f) { f.hidden = S.view == "admin"; f.setAttribute("aria-expanded", "false"); f.focus({ preventScroll: true }) } };
+A.coachToggle = () => (CO ? A.coachClose() : A.coachOpen());
+A.coachStarter = (k) => { const t = coachStarters()[k]; if (t) coachAsk(t) };
+A.starter = (k) => { const t = starters()[k]; if (t) coachAsk(t) };
+A.coachSend = () => { const i = $("#coachIn"), t = i && i.value.trim(); if (!t) return; i.value = ""; coachAsk(t) };
+A.coachClear = () => { const k = coachKey(); if (!(S.chat[k] || []).length) return; if (!confirm("Clear this chat with your coach?")) return; S.chat[k] = []; save(); coachRender() };
+async function coachAsk(m) {
+  if (!CO) A.coachOpen(); if (needAcc()) return; if (busy.ask || !m) return;
+  const k = coachKey(), h = S.chat[k] = S.chat[k] || [], lid = inLesson() ? S.cur : null;
+  h.push({ r: "u", t: m }); save(); if (lid) markStep("mentor"); act("mentor", { id: lid || "", page: S.view });
+  coachRender(); const log = $("#c-log"), live = document.createElement("div"); live.className = "b"; live.textContent = "Thinking..."; log.append(live); log.scrollTop = log.scrollHeight;
+  const btn = $("#coachBtn"); busy.ask = 1; if (btn) btn.disabled = true;
+  try { const text = await ai({ mode: "mentor", info: info(lid), messages: h.map((x) => ({ role: x.r == "u" ? "user" : "assistant", content: x.t })) }, (tx) => { live.textContent = tx; log.scrollTop = log.scrollHeight }); live.textContent = text; h.push({ r: "a", t: text }); save(); $("#c-clear").hidden = false }
   catch (e) { live.textContent = aiErr(e); live.classList.add("merr"); h.pop(); save() }
-  finally { busy.ask = 0; if (btn) btn.disabled = false }
-};
+  finally { busy.ask = 0; const b = $("#coachBtn"); if (b) b.disabled = false }
+}
 
 // ---------------- Completing a lesson ----------------
 function finH() {
   const el = $("#finbox"); if (!el) return; const id = S.cur, done = S.done[id], practiced = stepsOf(id).practice;
   const nid = (S.road || []).map((x) => x.id).find((x) => !S.done[x] && x != id), nl = nid && L(nid);
-  if (done) { el.innerHTML = `<div class="card done-box"><h3>✅ Lesson complete</h3>${roadDone() ? `<p>You've finished your whole roadmap! 🎓</p><button class=btn data-c="go:cert">Get your certificate →</button>` : nl ? `<p class=mu>Up next: <b>${nl.title}</b> · ${nl.min} min</p><button class=btn data-c="openL:${nid}">Next lesson →</button>` : ""} <button class="btn g" data-c="go:road">Roadmap</button> <button class="btn g" data-c="fb:${id}">Feedback on this lesson</button></div>`; return }
+  if (done) { el.innerHTML = `<div class="card done-box"><h3>Lesson complete</h3>${roadDone() ? `<p>That's your whole plan done. Here's what to do next.</p><button class=btn data-c="go:home">See what's next</button>` : nl ? `<p class=mu>Up next: <b>${nl.title}</b> · ${nl.min} min</p><button class=btn data-c="openL:${nid}">Next lesson →</button>` : ""} <button class="btn g" data-c="go:road">Your plan</button> <button class="btn g" data-c="fb:${id}">Feedback on this lesson</button></div>`; return }
   el.innerHTML = `<div class="card flat"><div class="row">${practiced ? `<button class=btn data-c="fin">Mark lesson complete</button>` : `<button class=btn disabled>Mark lesson complete</button>`}<button class="btn g" data-c="fb:${id}">Feedback on this lesson</button></div>${practiced ? "" : `<p class=help style="margin-top:10px">Finish the practice quiz to complete this lesson.</p>`}</div>`
 }
 A.fin = () => {
   const id = S.cur; if (!stepsOf(id).practice) { toast("Finish the practice quiz first"); A.jump("sec-practice"); return }
-  if (!(S.conf[id] || {}).post) { $("#finbox").innerHTML = `<div class="card flat"><b>Last step: how confident are you now with ${esc(L(id).title.toLowerCase())}?</b>${scale5("post")}</div>`; return }
+  if (!(S.conf[id] || {}).post) { $("#finbox").innerHTML = `<div class="card flat"><b>Last step: how confident are you now with ${esc(L(id).title)}?</b>${scale5("post")}</div>`; return }
   completeLesson()
 };
 function completeLesson() {
   const id = S.cur; if (S.done[id]) { finH(); return } S.done[id] = 1;
   const lv = L(id); if (lv) { S.vseen[curVideo(lv)[0]] = 1; delete S.vs[id] }   // next visit shows a video they haven't seen
-  save(); act("lesson_done", { id });
-  const c = S.conf[id] || {}; toast(c.pre && c.post > c.pre ? `Lesson complete ✅ Confidence up from ${c.pre} to ${c.post}!` : "Lesson complete ✅ Keep going"); finH();
+  save(); act("lesson_done", { id }); finH(); const n = $("#narr"); if (n) n.innerHTML = narrH();
+  doneMoment(id);
 }
+// The completion moment: where this lesson sits in the plan, what's next, and the week's goal.
+function doneMoment(id) {
+  const r = S.road || [], n = r.length, dn = nDone(), c = S.conf[id] || {}, l = L(id);
+  const nid = r.map((x) => x.id).find((x) => !S.done[x]), nl = nid && L(nid), wk = weekCount(), tg = weekTarget();
+  const frac = !n ? "" : dn == n ? "That's your whole plan." : dn * 4 == n ? "That's a quarter of your plan." : dn * 2 == n ? "You're halfway through your plan." : dn * 4 == n * 3 ? "Three quarters of your plan done." : `${dn} of ${n} lessons in your plan.`;
+  const d = document.createElement("div"); d.className = "done-moment"; d.setAttribute("role", "dialog"); d.setAttribute("aria-modal", "true"); d.setAttribute("aria-labelledby", "dmH");
+  d.innerHTML = `<div class=done-card><div class=say style="align-items:center">${mark(true)}<p class="mu m0">From your coach</p></div><h2 id=dmH>${esc(l.title)}: done. ${frac}</h2>
+<div class=prog role=img aria-label="${dn} of ${n} lessons done">${r.map((x) => `<span class="${S.done[x.id] && x.id != id ? "on" : ""}" ${x.id == id ? "data-new" : ""}></span>`).join("")}</div>
+${c.pre && c.post > c.pre ? `<p class=soft>Your confidence went from ${c.pre} to ${c.post} out of 5.</p>` : ""}
+<p class=soft>${nl ? `Next: ${esc(nl.title)}, about ${nl.min} minutes.` : "Next: see what's next on your Today page."}</p>
+<p class=soft>${wk >= tg ? `You've hit this week's goal of ${tg} learning day${tg > 1 ? "s" : ""}.` : `${tg - wk} more learning day${tg - wk == 1 ? "" : "s"} this week reaches your goal.`}</p>
+<div class="row l" style="margin-top:20px"><button class=btn data-c=doneHome>Back to today</button>${nl ? `<button class="btn g" data-c="doneNext:${nid}">Next lesson</button>` : ""}</div></div>`;
+  d.addEventListener("click", (e) => { if (e.target === d) A.doneClose() });
+  document.body.appendChild(d);
+  setTimeout(() => { const s2 = d.querySelector("[data-new]"); if (s2) s2.className = "new" }, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 450);
+  d.querySelector(".btn").focus();
+}
+A.doneClose = () => { const d = $(".done-moment"); if (d) d.remove() };
+A.doneHome = () => { A.doneClose(); go("home") };
+A.doneNext = (nid) => { A.doneClose(); A.openL(nid) };
 
 // ================= Practice studio =================
 V.practice = () => {
   document.title = "Practice studio · AI PM Coach";
   app.innerHTML = `<h1>Practice studio</h1><p class=mu style="margin-top:0">Practise the conversations AI PMs have every week. The AI plays the other person, then scores you and shows how to do better.${S.product ? "" : " Tip: add your product on the Home page to make scenarios more personal."}</p>
-<h2 style="margin-top:22px">🎭 Role-play simulator</h2><div class=grid2>${C.SCEN.map((s) => { const r = S.rp[s.id] || {}; return `<div class=card><span aria-hidden=true style="font-size:1.6rem">${s.icon}</span><h3>${esc(s.title)}</h3><p class=help><b>${esc(s.character)}</b> · ${esc(s.goal)}</p><div class=row><button class="btn sm" data-c="rpOpen:${s.id}">${lockTxt(r.msgs && r.msgs.length && !r.score ? "Continue" : "Start")}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>
-<h2 style="margin-top:26px">🎤 Interview simulator</h2><p class=help>Timed AI PM interview questions, scored by an AI hiring manager. Aim for a structured answer in about 3 minutes.</p>
+<h2 style="margin-top:22px">Role-play simulator</h2><div class=grid2>${C.SCEN.map((s) => { const r = S.rp[s.id] || {}; return `<div class=card><span aria-hidden=true style="font-size:1.6rem">${s.icon}</span><h3>${esc(s.title)}</h3><p class=help><b>${esc(s.character)}</b> · ${esc(s.goal)}</p><div class=row><button class="btn sm" data-c="rpOpen:${s.id}">${lockTxt(r.msgs && r.msgs.length && !r.score ? "Continue" : "Start")}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>
+<h2 style="margin-top:26px">Interview simulator</h2><p class=help>Timed AI PM interview questions, scored by an AI hiring manager. Aim for a structured answer in about 3 minutes.</p>
 <div class=grid2>${C.IVQ.map((q) => { const r = S.iv[q.id] || {}; return `<div class=card><span class=tag>${esc(q.cat)}</span><p style="margin:8px 0"><b>${esc(fillX(q.q))}</b></p><div class=row><button class="btn sm" data-c="ivOpen:${q.id}">${lockTxt(r.score ? "Try again" : "Answer")}</button>${r.best ? `<span class=pill>Best ${r.best}/10</span>` : ""}</div></div>` }).join("")}</div>`
 };
 
@@ -665,7 +828,7 @@ V.prd = () => {
   app.innerHTML = `<h1>Capstone: your AI PRD</h1><p class=mu style="margin-top:0">Write a product requirements document for a real AI feature, one section at a time. Each section gets an expert review. It makes a strong portfolio piece and interview story.</p>
 <div class="card flat"><div class=row><b id=prdN>${n} of ${C.PRD.length} sections drafted</b><span class=row><button class="btn g sm" data-c=prdCopy>Copy</button><button class="btn sm" data-c=prdDownload>Download (.md)</button></span></div><div class=bar style="margin-top:10px"><i id=prdBar style="width:${n / C.PRD.length * 100}%"></i></div>
 <label class=fl for=prdTitle>Feature name</label><input id=prdTitle data-in=prdTitle maxlength=120 placeholder="e.g. AI reply drafts for payment-support agents" value="${esc(S.prd.title || "")}"></div>
-${C.PRD.map((p, i) => { const f = S.prd.fb[p.id], cur = (S.prd.sec[p.id] || "").trim(); return `<div class=card id="prd-${p.id}"><span class=eyebrow>${i + 1}. ${esc(p.title)}</span><p class=help>${esc(p.guide)}</p><textarea rows=5 data-in="prdSec:${p.id}" placeholder="${esc(p.ph)}" aria-label="${esc(p.title)}">${esc(S.prd.sec[p.id] || "")}</textarea><div class=rfr><button class="btn g sm" data-c="prdRev:${p.id}" id="prdb-${p.id}">${guest() ? "🔒" : "✨"} Review this section</button><span class="mu sm" id="prdm-${p.id}"></span></div><div id="prdf-${p.id}">${f ? fbBox(f, cur && cur !== f.for, "See an improved version") : ""}</div></div>` }).join("")}`
+${C.PRD.map((p, i) => { const f = S.prd.fb[p.id], cur = (S.prd.sec[p.id] || "").trim(); return `<div class=card id="prd-${p.id}"><span class=eyebrow>${i + 1}. ${esc(p.title)}</span><p class=help>${esc(p.guide)}</p><textarea rows=5 data-in="prdSec:${p.id}" placeholder="${esc(p.ph)}" aria-label="${esc(p.title)}">${esc(S.prd.sec[p.id] || "")}</textarea><div class=rfr><button class="btn g sm" data-c="prdRev:${p.id}" id="prdb-${p.id}">${guest() ? "🔒 " : ""}Review this section</button><span class="mu sm" id="prdm-${p.id}"></span></div><div id="prdf-${p.id}">${f ? fbBox(f, cur && cur !== f.for, "See an improved version") : ""}</div></div>` }).join("")}`
 };
 IN.prdTitle = (el) => { S.prd.title = el.value.slice(0, 120); clearTimeout(IN._pt2); IN._pt2 = setTimeout(save, 400) };
 IN.prdSec = (el, id) => { S.prd.sec[id] = el.value; clearTimeout(IN._ps); IN._ps = setTimeout(() => { save(); checkAch() }, 500); const n = prdCount(), b = $("#prdBar"), t = $("#prdN"); if (b) b.style.width = n / C.PRD.length * 100 + "%"; if (t) t.textContent = `${n} of ${C.PRD.length} sections drafted` };
@@ -675,11 +838,11 @@ A.prdRev = async (id) => { if (needAcc()) return;
   msg.textContent = ""; busy["prd" + id] = 1; btn.disabled = true; btn.textContent = "Reviewing..."; box.innerHTML = '<div class="rfb ld">Reviewing your section...</div>';
   try { const f = normFb(await aiJSON({ mode: "prd", section: id, title: S.prd.title || "", info: info(), text })); f.for = text; S.prd.fb[id] = f; save(); act("prd_review", { id, rating: f.rating }); box.innerHTML = fbBox(f, false, "See an improved version") }
   catch (e) { box.innerHTML = `<div class="rfb er">${esc(aiErr(e))}</div>` }
-  finally { busy["prd" + id] = 0; btn.disabled = false; btn.textContent = "✨ Review this section" }
+  finally { busy["prd" + id] = 0; btn.disabled = false; btn.textContent = "Review this section" }
 };
 function prdMarkdown() { return `# ${S.prd.title || "AI feature PRD"}\n\n_Written with AI PM Coach_\n\n` + C.PRD.map((p) => `## ${p.title}\n\n${(S.prd.sec[p.id] || "").trim() || "_Not written yet._"}\n`).join("\n") }
 A.prdDownload = () => { download(((S.prd.title || "ai-prd").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ai-prd") + ".md", prdMarkdown()); ev("prd_download") };
-A.prdCopy = async () => { try { await navigator.clipboard.writeText(prdMarkdown()); toast("PRD copied to the clipboard 📋") } catch (e) { toast("Couldn't copy. Use Download instead.") } };
+A.prdCopy = async () => { try { await navigator.clipboard.writeText(prdMarkdown()); toast("PRD copied to the clipboard") } catch (e) { toast("Couldn't copy. Use Download instead.") } };
 
 // ================= Progress =================
 function accuracy() { const t = S.stats; return t && t.n ? Math.round(t.ok / t.n * 100) : null }
@@ -689,7 +852,6 @@ V.progress = () => {
   const confRows = (S.road || []).map((x) => ({ l: L(x.id), c: S.conf[x.id] })).filter((r) => r.c && r.c.pre);
   app.innerHTML = `<h1>Your progress</h1>
 <div class=grid3><div class="card flat"><div class=big>${nDone()}/${(S.road || []).length}</div><p class=sub>lessons complete</p></div><div class="card flat"><div class=big>🔥 ${streak()}</div><p class=sub>day streak (best ${S.best || 0})</p></div><div class="card flat"><div class=big>${acc == null ? "-" : acc + "%"}</div><p class=sub>practice accuracy</p></div></div>
-<div class=card><span class=eyebrow>Certificate</span>${roadDone() ? `<h3>🎓 Unlocked</h3><p class=help>Add it to your LinkedIn profile or save it as a PDF.</p><button class=btn data-c="go:cert">View certificate</button>` : `<h3>Finish your roadmap to unlock it</h3><div class=bar><i style="width:${nDone() / (S.road || [1]).length * 100}%"></i></div><p class=sub>${(S.road || []).length - nDone()} lessons to go</p><button class="btn g sm" data-c="go:cert">Preview</button>`}</div>
 <div class=card><span class=eyebrow>Skill radar</span>${radar()}</div>
 <div class=card><span class=eyebrow>Confidence</span>${confRows.length ? confRows.map((r) => `<div class=cbar><span>${esc(r.l.title)}</span><span class=t title="Before ${r.c.pre}, after ${r.c.post || "-"}"><i class=pre style="width:${r.c.pre * 20}%"></i>${r.c.post ? `<i class=post style="width:${r.c.post * 20}%"></i>` : ""}</span></div>`).join("") + `<p class=legend><span><i style="background:var(--mu);opacity:.45"></i>Before the lesson</span><span><i style="background:var(--ac)"></i>After</span></p>` : '<p class=help>Rate your confidence at the start and end of each lesson to see your growth here.</p>'}</div>
 <div class=card><span class=eyebrow>Achievements · ${got} of ${ACH.length}</span><div class=ach>${ACH.map(([id, e, n, d]) => `<div class="${S.ach[id] ? "" : "lock"}"><span class=e aria-hidden=true>${e}</span><b>${n}</b><span>${d}</span></div>`).join("")}</div></div>
@@ -698,23 +860,6 @@ V.progress = () => {
 A.exportData = () => { download("ai-pm-coach-data.json", JSON.stringify(S, null, 1), "application/json") };
 A.resetAll = () => { if (AU) { go("account"); toast("To delete your saved progress, delete your account data here."); return } if (!confirm("Delete all your progress, answers and chats on this device? This can't be undone.")) return; const theme = S.theme, consent = S.consent; S = { theme, consent }; initState(); save(); ev("reset"); go("land"); toast("Everything was deleted from this device.") };
 
-// ================= Certificate =================
-const CERT_TITLE = "AI Product Management Foundations";
-V.cert = () => {
-  document.title = "Certificate · AI PM Coach";
-  if (!roadDone()) { const left = (S.road || []).filter((x) => !S.done[x.id]); app.innerHTML = `<h1>Your certificate</h1><div class=card><h3>🔒 Finish your roadmap to unlock it</h3><div class=bar><i style="width:${nDone() / Math.max(1, (S.road || []).length) * 100}%"></i></div><p class=mu>Still to do:</p><ul>${left.map((x) => `<li>${L(x.id).title}</li>`).join("")}</ul>${left[0] ? `<button class=btn data-c="openL:${left[0].id}">Continue learning →</button>` : ""}</div>`; return }
-  if (!S.cert) { S.cert = { name: "", date: dkey(), id: "AIPM-" + Math.random().toString(36).slice(2, 8).toUpperCase() }; save(); ev("cert_unlocked") }
-  const c = S.cert, [y, m] = c.date.split("-"), hours = Math.round((S.road || []).reduce((a, x) => a + L(x.id).min, 0) / 6) / 10, enc = encodeURIComponent;
-  const add = `https://www.linkedin.com/profile/add?startTask=CERTIFICATION_NAME&name=${enc(CERT_TITLE)}&organizationName=${enc("AI PM Coach")}&issueYear=${+y}&issueMonth=${+m}&certUrl=${enc(CFG.siteUrl)}&certId=${enc(c.id)}`;
-  const share = `https://www.linkedin.com/sharing/share-offsite/?url=${enc(CFG.siteUrl)}`;
-  app.innerHTML = `<div class=no-print><h1>Your certificate 🎓</h1><div class="card flat"><label class=fl for=certName>Name on the certificate</label><input id=certName data-in=certName maxlength=60 placeholder="Your full name" value="${esc(c.name)}"></div></div>
-<div class=cert><div class=seal aria-hidden=true>🏅</div><p class=mu style="letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin:0">Certificate of completion</p><h2>${CERT_TITLE}</h2><p class=mu>This certifies that</p><div class=nm id=certNm>${esc(c.name) || "Your name"}</div><p>has completed the AI PM Coach roadmap: ${(S.road || []).length} lessons (about ${hours} hours) covering AI fundamentals, product discovery, AI design, RAG, evaluation, safety and AI product strategy.</p>
-<div class=meta><span>Issued ${new Date(c.date + "T12:00:00").toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}<br>Credential ID ${esc(c.id)}</span><span style="text-align:right">AI PM Coach<br>${esc(CFG.siteUrl.replace(/^https?:\/\//, ""))}</span></div></div>
-<div class="row l no-print" style="margin-top:16px"><button class=btn data-c=certPrint>Save as PDF / print</button><a class="btn g" href="${add}" target=_blank rel=noopener data-track=cert_linkedin_add style="text-decoration:none">Add to LinkedIn profile</a><a class="btn g" href="${share}" target=_blank rel=noopener data-track=cert_linkedin_share style="text-decoration:none">Share on LinkedIn</a></div>
-<p class="help no-print">This certificate confirms completion of a self-paced learning programme. It isn't an accredited qualification.</p>`
-};
-IN.certName = (el) => { S.cert.name = el.value.slice(0, 60); save(); const n = $("#certNm"); if (n) n.textContent = S.cert.name || "Your name" };
-A.certPrint = () => { ev("cert_print"); window.print() };
 document.addEventListener("click", (e) => { const a = e.target.closest("a[data-track]"); if (a) ev(a.dataset.track) });
 
 // ================= About & privacy =================
@@ -723,14 +868,14 @@ V.about = () => {
   document.title = "About · AI PM Coach";
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><span class=eyebrow style="display:table;margin-top:22px">About</span><h1>About AI PM Coach</h1>
 ${o.name ? `<div class=card><div class=row style="justify-content:flex-start;gap:16px;flex-wrap:nowrap"><div class=av aria-hidden=true>${esc(ini)}</div><div><p class=mu style="margin:0">Created by</p><b style="font-size:1.25rem">${esc(o.name)}</b><br><span class=mu>${esc(o.role || "")}</span></div></div>${(o.bio || []).map((p) => `<p>${esc(p)}</p>`).join("")}${o.linkedin ? `<p style="margin-bottom:0"><a class="btn g" style="display:inline-block;text-decoration:none;padding:10px 18px" href="${esc(o.linkedin)}" target=_blank rel=noopener>Connect on LinkedIn ↗</a></p>` : ""}</div>` : ""}
-<div class=card><span class=eyebrow>What this app does</span><p>AI PM Coach helps product managers build the skills to work on AI products. A 2-minute assessment of your experience, technical comfort, AI knowledge and goals produces a personal roadmap, sized to the time you have each week.</p><p>Each lesson combines a short video, a written explanation with further reading, practice questions in your industry, and reflection questions with AI feedback. Beyond lessons you'll find a daily challenge, smart review, role-play and interview simulators, a capstone AI PRD and a certificate.</p></div>
+<div class=card><span class=eyebrow>What this app does</span><p>AI PM Coach helps product managers build the skills to work on AI products. A 2-minute assessment of your experience, technical comfort, AI knowledge and goals produces a personal roadmap, sized to the time you have each week.</p><p>Each lesson combines a short video, a written explanation with further reading, practice questions in your industry, and reflection questions with AI feedback. Beyond lessons you'll find a daily challenge, smart review, role-play and interview simulators, and a capstone where you write an AI PRD for your own product. Your coach is in the corner of every page.</p></div>
 <div class=card><span class=eyebrow>Your data</span><p style="margin:0">Your progress is saved in this browser, and in your account if you sign in with Google. When you use an AI feature, what you type is sent to our server and to Anthropic to generate the reply. Details are in the <button class=lnk data-c="go:privacy">privacy notice</button>.</p></div>
 <div class=card><span class=eyebrow>Help improve it</span><p>Found a bug, want a topic covered, or have an idea? I'd love to hear it.</p><button class=btn data-c="fb">Give feedback</button></div>`
 };
 V.privacy = () => {
   document.title = "Privacy · AI PM Coach"; const o = CFG.owner || {};
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><h1 style="margin-top:14px">Privacy notice</h1><p class=mu>Plain-language summary of what happens to your data.</p>
-<div class=card><h3>Stored in your browser</h3><p>Your assessment answers, roadmap, progress, reflections, chats, simulator answers and PRD drafts are saved in this browser's local storage. If you don't sign in, we don't have a copy. Clearing your browser data deletes them, and you can also download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
+<div class=card><h3>Stored in your browser</h3><p>If you don't sign in, your assessment answers and plan are kept only in this browser tab and deleted when you close it; we don't have a copy. When you're signed in, your progress, reflections, chats, simulator answers and PRD drafts are also kept in this browser's local storage so the app works quickly. You can download or delete everything on the <button class=lnk data-c="go:progress">Progress</button> page.</p></div>
 <div class=card><h3>If you sign in</h3><p>Signing in is optional and uses your <b>Google</b> account through <b>Supabase</b>, our account and database provider. We receive your name and email address from Google. Your progress is then also stored in our Supabase database so you can continue on any device, and we record the days you use the app and how often you sign in, to understand how many people use it. The site owner can see your name, email, sign-up date, last activity and lessons completed. You can delete your account and all its data at any time on the <button class=lnk data-c="go:account">Account</button> page.</p></div>
 <div class=card><h3>Sent when you use AI features</h3><p>When you use the AI Mentor, reflection feedback, new practice questions, the PRD review, role-play or interview scoring, the text you enter, your assessment answers (level, industry and goal), your product description if you added one, and the current lesson are sent to this site's server function (hosted by Netlify) and passed to <b>Anthropic</b>, which provides the Claude AI model, to generate the reply. Don't enter confidential or personal information in these features. The server doesn't store your messages; it checks that you're signed in and keeps a daily request counter per account (an anonymised hash of your account ID) to prevent abuse, and hosting logs may record technical errors.</p></div>
 <div class=card><h3>Feedback form</h3><p>If you send feedback, your message, rating and, optionally, your email address are stored with <b>Netlify Forms</b> so ${esc(o.name || "the site owner")} can read and reply to them.</p></div>
@@ -747,7 +892,7 @@ A.fbback = () => go(F.from && F.from != "feedback" ? F.from : (S.profile ? "home
 V.feedback = () => {
   if (F.from === undefined) F = { type: null, rating: 0, lesson: "", from: S.profile ? "home" : "land", sent: false };
   document.title = "Feedback · AI PM Coach";
-  if (F.sent) { app.innerHTML = `<span class=eyebrow>Feedback</span><h1>Thank you! 🙏</h1><div class=card><p style="margin-top:0">Your feedback was sent. Every message is read and helps decide what to improve next.</p><div class="row l"><button class=btn data-c="fbback">Back to where I was</button><button class="btn g" data-c="fb">Send more feedback</button></div></div>`; return }
+  if (F.sent) { app.innerHTML = `<span class=eyebrow>Feedback</span><h1>Thank you</h1><div class=card><p style="margin-top:0">Your feedback was sent. Every message is read and helps decide what to improve next.</p><div class="row l"><button class=btn data-c="fbback">Back to where I was</button><button class="btn g" data-c="fb">Send more feedback</button></div></div>`; return }
   app.innerHTML = `<button class="btn g sm" data-c="go:${S.profile ? "home" : "land"}">&larr; Back to home</button><span class=eyebrow style="display:table;margin-top:22px">Feedback</span><h1>Help improve AI PM Coach</h1><p class=mu>Tell me what's working, what isn't, and what you'd like to see. It takes about a minute.</p>
 <div class=card><label class=fl>What kind of feedback?</label><div class=tiles id=fbt style="margin-top:8px" role=group aria-label="Feedback type">${FT.map((f, i) => tileH(f[0], F.type === i, `fbt:${i}`, f[2], f[3], false)).join("")}</div>
 <label class=fl>How would you rate the app overall? <span class=mu>(optional)</span></label><div class=stars id=fbr role=group aria-label="Rating">${[1, 2, 3, 4, 5].map((n) => `<button type=button class="star ${n <= F.rating ? "on" : ""}" data-c="fbr:${n}" aria-label="${n} star${n > 1 ? "s" : ""}">★</button>`).join("")}</div>
@@ -766,7 +911,7 @@ A.fbs = async () => {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { er.textContent = "That email address doesn't look right. Fix it or leave it empty."; return }
   const body = new URLSearchParams({ "form-name": "feedback", type: FT[F.type][0], rating: F.rating ? F.rating + " / 5" : "Not rated", lesson: lesson ? L(lesson).title : "General", message: msg, email, "bot-field": $("#fbh").value });
   er.textContent = ""; btn.disabled = true; btn.textContent = "Sending...";
-  try { const r = await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }); if (!r.ok) throw new Error(r.status); F.sent = true; ev("feedback"); V.feedback(); window.scrollTo(0, 0); toast("Feedback sent - thank you! 🙏") }
+  try { const r = await fetch("/", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: body.toString() }); if (!r.ok) throw new Error(r.status); F.sent = true; ev("feedback"); V.feedback(); window.scrollTo(0, 0); toast("Feedback sent. Thank you!") }
   catch (e) { btn.disabled = false; btn.textContent = "Send feedback"; er.textContent = "Sorry, your feedback couldn't be sent right now. Please try again in a moment." }
 };
 
@@ -829,7 +974,7 @@ function mergeFrom(remote) {
   for (const id in remote.ref || {}) { const r = remote.ref[id], l = S.ref[id]; if (!l) S.ref[id] = r; else if (Array.isArray(r) && Array.isArray(l)) r.forEach((v, i) => { if (v && !(l[i] || "").trim()) l[i] = v }) }
   if (remote.prd) { S.prd.title = S.prd.title || remote.prd.title || ""; for (const sec in remote.prd.sec || {}) if (!(S.prd.sec[sec] || "").trim()) S.prd.sec[sec] = remote.prd.sec[sec]; for (const f in remote.prd.fb || {}) if (!S.prd.fb[f]) S.prd.fb[f] = remote.prd.fb[f] }
   if (!S.product && remote.product) S.product = remote.product;
-  if (!S.cert && remote.cert) S.cert = remote.cert;
+  
   S.best = Math.max(S.best || 0, remote.best || 0); S.revOk = Math.max(S.revOk || 0, remote.revOk || 0);
   if (remote.stats && (!S.stats || remote.stats.n > S.stats.n)) S.stats = remote.stats;
 }
@@ -839,15 +984,18 @@ function adopt(remote, ts) {
 }
 async function pull(first) {
   if (!AU || !AU.email) return; lastPull = Date.now();
+  if (first) {                                // progress this browser had from before guests became visit-only
+    try { const raw = localStorage.getItem("aipm_old"); if (raw) { localStorage.removeItem("aipm_old"); const o = JSON.parse(raw); if (!hasProgress(S) && hasProgress(o)) { const keep = { theme: S.theme, consent: S.consent, view: ["land", "quiz", "prof"].includes(S.view) || !S.view ? "home" : S.view }; S = Object.assign(o, keep); delete S.acct; initState(); saveLocal(); render(); setTimeout(() => toast("We've added the progress from this browser to your account"), 600) } } } catch (e) { }
+  }
   let r; try { r = await acc({ action: "load" }) } catch (e) { syncBadge(e.code); return }
   const remote = r.state, ts = r.updated_at;
-  if (!remote || !hasProgress(remote)) { if (hasProgress(S)) { S.acct = AU.email; await push(true); if (first) toast("Your progress is now saved to your account ☁️") } else S.acct = AU.email; saveLocal(); return }
+  if (!remote || !hasProgress(remote)) { if (hasProgress(S)) { S.acct = AU.email; await push(true); if (first) toast("Your progress is now saved to your account") } else S.acct = AU.email; saveLocal(); return }
   if (S.acct == AU.email) {                   // this device already belongs to this account
     if (S.syncedAt == ts) { if (S.dirty) push(); return }
     if (!S.dirty) { adopt(remote, ts); if (!first) toast("Updated with your progress from another device") } else { mergeFrom(remote); S.syncedAt = ts; saveLocal(); push(true) }
     return;
   }
-  if (!hasProgress(S)) { adopt(remote, ts); toast("Welcome back! Your progress is loaded ☁️"); return }
+  if (!hasProgress(S)) { adopt(remote, ts); toast("Welcome back! Your progress is loaded"); return }
   CH = { remote, ts }; go("syncChoice");      // both this device and the account have progress: let the learner choose
 }
 let CH = null;
@@ -858,10 +1006,10 @@ V.syncChoice = () => {
 <div class=grid2><div class=card><span class=eyebrow>In your account</span><h3>${esc(summary(CH.remote))}</h3><button class=btn data-c=keepRemote>Use my account's progress</button></div>
 <div class=card><span class=eyebrow>In this browser</span><h3>${esc(summary(S))}</h3><button class="btn g" data-c=keepLocal>Use this browser's progress</button></div></div>`
 };
-A.keepRemote = () => { const c = CH; CH = null; adopt(c.remote, c.ts); go("home"); toast("Loaded the progress from your account ☁️") };
-A.keepLocal = async () => { const c = CH; CH = null; S.acct = AU.email; S.syncedAt = c.ts; await push(true); go("home"); toast("This browser's progress is now saved to your account ☁️") };
+A.keepRemote = () => { const c = CH; CH = null; adopt(c.remote, c.ts); go("home"); toast("Loaded the progress from your account") };
+A.keepLocal = async () => { const c = CH; CH = null; S.acct = AU.email; S.syncedAt = c.ts; await push(true); go("home"); toast("This browser's progress is now saved to your account") };
 function syncBadge(err) { const el = $("#syncState"); if (!el) return; el.textContent = err ? "Couldn't save to your account just now. We'll retry automatically." : S.syncedAt ? `Saved to your account ${new Date(S.syncedAt).toLocaleString()}` : "Saving..." }
-A.syncNow = async () => { await push(true); await pull(); syncBadge(); toast("Synced ☁️") };
+A.syncNow = async () => { await push(true); await pull(); syncBadge(); toast("Synced") };
 A.signout = async () => {
   if (S.dirty) await push(true);
   if (!confirm("Sign out? Your progress stays saved in your account, and it will be removed from this browser.")) return;
@@ -873,8 +1021,9 @@ A.signout = async () => {
 function endSession(msg) {
   const was = S.acct || (AU && AU.email);
   if (was && S.dirty) { try { localStorage.setItem("aipm_unsynced", JSON.stringify({ acct: was, state: syncable() })) } catch (e) { } }
-  const theme = S.theme, consent = S.consent; AU = null; saveAuth(); S = { theme, consent }; initState(); saveLocal();
-  A.wallClose(); renderNav(); go("land"); if (msg) toast(msg);
+  const theme = S.theme, consent = S.consent; AU = null; saveAuth(); S = { theme, consent }; initState();
+  if (ACC.on) { try { localStorage.removeItem("aipm") } catch (e) { } }
+  saveLocal(); A.wallClose(); renderNav(); go("land"); if (msg) toast(msg);
 }
 async function mergeUnsynced() {
   let st = null; try { st = JSON.parse(localStorage.getItem("aipm_unsynced") || "null") } catch (e) { }
@@ -896,9 +1045,9 @@ V.account = () => {
 async function startAccounts() {
   try { const st = JSON.parse(sessionStorage.getItem("aipm_acc") || "null"); if (st) ACC.on = st.on } catch (e) { }
   const fresh = takeRedirect();
-  if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } renderNav(); if (["home", "account", "road", "practice", "prd"].includes(S.view)) render() }).catch(() => { });
+  if (!ACC.checked) accPost({ action: "status" }, false).then((d) => { ACC.on = !!(d && d.accounts); ACC.checked = true; try { sessionStorage.setItem("aipm_acc", JSON.stringify({ on: ACC.on })) } catch (e) { } if (ACC.on && !AU && stashOldGuest()) { const keep = { theme: S.theme, consent: S.consent }; S = load(); Object.assign(S, { theme: S.theme ?? keep.theme, consent: S.consent ?? keep.consent }); initState(); if (!S.profile && !["land", "quiz", "about", "privacy", "feedback", "admin", "account"].includes(S.view)) S.view = "land"; render() } renderNav(); if (["home", "account", "road", "practice", "prd"].includes(S.view)) render() }).catch(() => { });
   if (!AU) return;
-  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; A.wallClose(); if (fresh) { ev("login"); toast(`Signed in as ${AU.email} ✅`) } renderNav(); await pull(true); await mergeUnsynced(); if (S.view == "admin") V.admin() }
+  try { const d = await acc({ action: "session", login: fresh }); AU.email = d.user.email; AU.name = d.user.name; AU.admin = !!d.admin; saveAuth(); ACC.on = true; A.wallClose(); if (fresh) { ev("login"); toast(`Signed in as ${AU.email}`) } renderNav(); await pull(true); await mergeUnsynced(); if (S.view == "admin") V.admin() }
   catch (e) { if (fresh) toast("Sign-in couldn't be completed. Please try again.") }
 }
 document.addEventListener("visibilitychange", () => { if (!AU) return; if (document.visibilityState == "hidden") { if (S.dirty) push() } else if (Date.now() - lastPull > 60000) pull() });
@@ -961,6 +1110,7 @@ function consentBanner() {
 A.consent = (v) => { S.consent = v; save(); consentBanner(); if (v == "yes") loadPostHog(); else if (PH) { try { PH.opt_out_capturing() } catch (e) { } } if (S.view == "privacy") V.privacy(); toast(v == "yes" ? "Thanks! Analytics allowed." : "Okay, no analytics.") };
 
 // ================= Start =================
+if (guestMode()) stashOldGuest();
 initState(); applyTheme();
 if (isAdminURL()) S.view = "admin"; else if (S.view == "admin") S.view = S.profile ? "home" : "land";
 if (!S.view || (S.view == "land" && S.profile && S.road)) S.view = S.profile && S.road ? "home" : "land";

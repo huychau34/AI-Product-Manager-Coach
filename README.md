@@ -1,6 +1,6 @@
 # AI PM Coach
 
-A personalised AI product management learning app: assessment, roadmap, 15 lessons (video, reading, practice, reflection with AI feedback, AI Mentor), a daily challenge, smart review, role-play and interview simulators, a capstone AI PRD, achievements and a LinkedIn-ready certificate. Learners can sign in with Google to keep their progress in the cloud, and you get an admin dashboard of sign-ins and active users.
+A personalised AI product management learning app: a 5-question assessment, a learning plan, 15 lessons (video, reading, practice, reflection with AI feedback), a coach that floats on every page, a daily question, smart review, role-play and interview simulators, a capstone AI PRD and achievements. Learners can sign in with Google to keep their progress in the cloud, and you get an admin dashboard of sign-ins and active users.
 
 ## What's in this folder
 
@@ -10,6 +10,7 @@ A personalised AI product management learning app: assessment, roadmap, 15 lesso
 | `public/js/app.js` | All app logic |
 | `public/js/content.js` | Lessons, questions, readings, videos, simulator scenarios, interview questions and capstone sections |
 | `public/js/config.js` | Your settings: site address, analytics key, About-page details |
+| `public/fonts/` | The Hanken Grotesk font, self-hosted (SIL Open Font License, licence file included) |
 | `public/css/app.css` | Styles |
 | `public/learn/` | Search-friendly topic pages, one per lesson |
 | `public/sitemap.xml`, `public/robots.txt`, `public/og.png`, `public/favicon.svg` | Search engines, link previews and icon |
@@ -73,7 +74,15 @@ Then **Deploys → Trigger deploy → Deploy site**.
 
 **5. Test it:** open the site, click **Sign in → Continue with Google**, and you should come back signed in (your name appears top right). Then open `/admin`.
 
-How it works for learners: guests can take the assessment, see their roadmap and do their **first lesson** (video, reading, practice questions and reflection notes). Everything else, including **all AI features** (Mentor, reflection feedback, new AI questions, role-play, interview and PRD review), needs a free Google sign-in. The server enforces this: once accounts are set up, any AI request without a valid sign-in is refused with "login_required" before it reaches Anthropic, so guests can't spend your tokens. If accounts aren't set up, the app works for everyone as before. When they sign in, their existing progress is saved to their account; on a new device it loads automatically. If a browser and the account both have different progress, the learner chooses which to keep. Changes save automatically about two seconds after each edit, and progress made on two devices is merged.
+How it works for learners: visitors who aren't signed in always start at the visitor page. They can take the 5-question assessment and see their plan, but that plan is kept only for the visit (in the browser tab's session storage) and disappears when they close the tab. **Lessons and all AI features** (the coach, reflection feedback, new AI questions, role-play, interview and PRD review) need a free Google sign-in. The server enforces this: once accounts are set up, any AI request without a valid sign-in is refused with "login_required" before it reaches Anthropic, so guests can't spend your tokens. If accounts aren't set up, the app works for everyone and saves in the browser as before. Progress a guest saved in this browser under the old version is kept aside and added to their account the first time they sign in. On a new device, account progress loads automatically; if a browser and the account both have different progress, the learner chooses which to keep. Changes save automatically about two seconds after each edit, and progress made on two devices is merged.
+
+### The learner experience
+
+- **Today** (home): the next lesson, a coach card that asks how much time you have (20 minutes opens the lesson, 5 minutes shows the daily question right there), this week's goal, review, practice and capstone. First-time visitors get a short guided tour (shown once).
+- **Lessons**: a narrator bar at the top shows minutes left and the next step, a "Key idea" note sits next to "Why it matters", and a "Does that make sense?" checkpoint after the explanation lets learners ask the coach to explain it another way. Finishing a lesson shows a short completion moment with the plan's progress, the next lesson and the week's goal.
+- **Coach**: the round button in the bottom-right corner opens a chat on every page. Inside a lesson it uses that lesson's chat; elsewhere it has a general chat and knows which page the learner is on.
+- **What's next**: when the plan is finished, Today suggests adding more lessons (listed at the bottom of the Plan page with "Add to my plan"), the capstone, the practice studio and daily review. There is no certificate any more.
+- **Assessment**: 5 questions (experience, technical comfort, AI experience, goal, time per week). Industry is optional and set under "My product" on Today or the profile page.
 
 ## Turning on analytics (PostHog)
 
@@ -81,7 +90,7 @@ How it works for learners: guests can take the assessment, see their roadmap and
 2. Copy your **project API key** (starts with `phc_`).
 3. In `public/js/config.js`, paste it into `posthogKey: ""` and commit.
 
-Visitors see a consent banner and nothing is tracked until they click **Allow**. Events include assessment started/completed, lessons opened/completed, practice answers, mentor messages, reflections, reviews, daily challenges, simulator scores, PRD reviews, achievements and certificate actions, which is enough to build activation, funnel and retention charts in PostHog. If you use another analytics tool, its domain must also be added to the Content-Security-Policy in `netlify.toml`.
+Visitors see a consent banner and nothing is tracked until they click **Allow**. Events include assessment started/completed, lessons opened/completed, practice answers, mentor messages, reflections, reviews, daily challenges, simulator scores, PRD reviews, coach chats and achievements, which is enough to build activation, funnel and retention charts in PostHog. If you use another analytics tool, its domain must also be added to the Content-Security-Policy in `netlify.toml`.
 
 ## Settings
 
@@ -97,7 +106,7 @@ Visitors see a consent banner and nothing is tracked until they click **Allow**.
 | `ADMIN_EMAILS` | - | Who can see the admin dashboard |
 | `STATS_TIMEZONE` | `Europe/Helsinki` | Which timezone "today" means in the dashboard |
 
-`public/js/config.js` holds the site address (used by the certificate and LinkedIn buttons), the PostHog key and the About-page details. If you move to a custom domain, update `siteUrl` there and the addresses in `public/index.html`, `public/sitemap.xml` and `public/robots.txt`.
+`public/js/config.js` holds the site address, the PostHog key and the About-page details. If you move to a custom domain, update `siteUrl` there and the addresses in `public/index.html`, `public/sitemap.xml` and `public/robots.txt`.
 
 ## Safety built in
 

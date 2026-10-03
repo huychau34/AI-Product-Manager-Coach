@@ -13,11 +13,12 @@ export const DATA = {
   "Fintech",
   "E-commerce",
   "Healthcare",
-  "ERP / Enterprise Software",
+  "ERP",
+  "Enterprise Software",
   "Telecommunications",
   "Manufacturing",
   "Consulting",
-  "Other"
+  "a range of industries"
  ],
  "GOAL": [
   "Add AI skills to my current PM role",
